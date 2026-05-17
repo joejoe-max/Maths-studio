@@ -17,3 +17,5 @@ frontend/dist/
 backend/dist/
 __pycache__/
 *.pyc
+__pycache__/
+*.pyc
