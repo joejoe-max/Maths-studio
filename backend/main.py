@@ -96,8 +96,16 @@ solve_semaphore       = asyncio.Semaphore(MAX_CONCURRENT_SOLVES)
 request_windows: dict[str, list[float]] = {}
 request_windows_lock  = asyncio.Lock()
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-gemini_client  = genai.Client(api_key=GEMINI_API_KEY)
+GEMINI_API_KEY = os.environ.get("AI_INTEGRATIONS_GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY", "")
+GEMINI_BASE_URL = os.environ.get("AI_INTEGRATIONS_GEMINI_BASE_URL")
+
+if GEMINI_BASE_URL:
+    gemini_client = genai.Client(
+        api_key=GEMINI_API_KEY,
+        http_options={"api_version": "", "base_url": GEMINI_BASE_URL},
+    )
+else:
+    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
 GEMINI_MODELS = [
     "gemini-2.5-flash-lite",
