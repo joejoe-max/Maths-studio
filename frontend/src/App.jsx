@@ -1,180 +1,100 @@
 import React, { useState, useEffect, useRef } from 'react';
-
-const logger = {
-  error: (msg, data) => console.error(`[Error] ${msg}`, data),
-  warn: (msg, data) => console.warn(`[Warn] ${msg}`, data),
-  info: (msg, data) => console.log(`[Info] ${msg}`, data),
-};
-import { 
-  History, 
-  Trash2
-} from 'lucide-react';
+import { History, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  saveComputation, 
-  getHistory, 
-  deleteHistoryItem,
-  saveCurrentSession,
-  loadCurrentSession,
-  clearCurrentSession
+import {
+  saveComputation, getHistory, deleteHistoryItem,
+  saveCurrentSession, loadCurrentSession, clearCurrentSession
 } from './lib/db';
-
-// Modular Components (Eager Load)
-import HistorySidebar from './components/HistorySidebar';
-import MessageBubble from './components/MessageBubble';
-import ChatInput from './components/ChatInput';
-import DocsPage from './components/DocsPage';
-import ParameterDialog from './components/ParameterDialog';
+import NotebookWorkspace from './components/NotebookWorkspace';
+import EngineeringInput from './components/EngineeringInput';
+import NotebookSidebar from './components/NotebookSidebar';
 
 export default function App() {
-  const [messages, setMessages] = useState([]);
+  const [entries, setEntries] = useState([]);
   const [history, setHistory] = useState([]);
   const [inputText, setInputText] = useState('');
-  const [imagePreview, setImagePreview] = useState(null);
-  const [dataFile, setDataFile] = useState(null);
-  const [plotConfig, setPlotConfig] = useState({ type: 'line', title: '', xlabel: '', ylabel: '' });
   const [isProcessing, setIsProcessing] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [showDocs, setShowDocs] = useState(false);
-  const [online, setOnline] = useState(navigator.onLine);
-  const [showParamDialog, setShowParamDialog] = useState(false);
-  const [missingParams, setMissingParams] = useState([]);
-  const [pendingCompute, setPendingCompute] = useState(null);
-  const [parameterPrompt, setParameterPrompt] = useState('');
-  const abortControllerRef = useRef(null);
+  const abortRef = useRef(null);
   const scrollRef = useRef(null);
-  const fileInputRef = useRef(null);
-  const [isAtBottom, setIsAtBottom] = useState(true);
 
   useEffect(() => {
     loadHistory();
     loadSession();
-    const handleStatus = () => setOnline(navigator.onLine);
-    window.addEventListener('online', handleStatus);
-    window.addEventListener('offline', handleStatus);
-    return () => {
-      window.removeEventListener('online', handleStatus);
-      window.removeEventListener('offline', handleStatus);
-    };
   }, []);
 
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-
-    const onScroll = () => {
-      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-      // allow 24px leeway for rounding/animation
-      setIsAtBottom(distanceFromBottom < 24);
-    };
-
-    onScroll();
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
-  }, []);
-
-  useEffect(() => {
-    // Auto-scroll only if user is at/near the bottom.
-    if (scrollRef.current && isAtBottom) {
+    if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-
-    // Save current session whenever messages change
-    if (messages.length > 0) {
-      saveCurrentSession(messages);
-    }
-  }, [messages, isAtBottom]);
+    if (entries.length > 0) saveCurrentSession(entries);
+  }, [entries]);
 
   const loadSession = async () => {
     const saved = await loadCurrentSession();
-    if (saved && Array.isArray(saved)) {
-      setMessages(saved);
-    }
+    if (saved && Array.isArray(saved)) setEntries(saved);
   };
 
   const loadHistory = async () => {
     const data = await getHistory();
-    setHistory(data.sort((a,b) => b.timestamp - a.timestamp));
+    setHistory(data.sort((a, b) => b.timestamp - a.timestamp));
   };
 
-  const upsertMessage = (list, message) => {
-    const index = list.findIndex(item => String(item.id) === String(message.id));
-    if (index === -1) return [...list, message];
+  const upsert = (list, item) => {
+    const idx = list.findIndex(e => String(e.id) === String(item.id));
+    if (idx === -1) return [...list, item];
     const copy = [...list];
-    copy[index] = { ...copy[index], ...message };
+    copy[idx] = { ...copy[idx], ...item };
     return copy;
   };
 
-  const executeCompute = async ({ payload, assistantMessage, saveContext }) => {
-    abortControllerRef.current = new AbortController();
-    const userMessage = {
-      id: saveContext.userMessageId,
-      role: 'user',
-      content: saveContext.currentInput,
-      image: saveContext.currentImage,
-      timestamp: saveContext.timestamp
-    };
-    setIsProcessing(true);
-    setShowParamDialog(false);
-    setMissingParams([]);
-    setParameterPrompt('');
-    setMessages(prev => {
-      let next = upsertMessage(prev, userMessage);
-      next = upsertMessage(next, assistantMessage);
-      return next;
-    });
+  const handleCompute = async () => {
+    if (!inputText.trim() || isProcessing) return;
+    const query = inputText.trim();
+    setInputText('');
 
-    const API_BASE = import.meta.env.VITE_BACKEND_URL || '';
+    const ts = Date.now();
+    const entryId = ts.toString();
+
+    const newEntry = {
+      id: entryId,
+      query,
+      domain: null,
+      capabilities: [],
+      events: [],
+      diagrams: [],
+      final: null,
+      summary: [],
+      steps: [],
+      isProcessing: true,
+      error: null,
+      timestamp: ts,
+    };
+
+    setEntries(prev => [...prev, newEntry]);
+    setIsProcessing(true);
+    abortRef.current = new AbortController();
+
+    const payload = {
+      type: 'text',
+      input: query,
+      supplemental_params: {},
+      history: [],
+    };
 
     try {
-      // Production has only FastAPI backend (no Express proxy server/).
-      // FastAPI SSE endpoint:
-      // POST /api/compute/solve
-      const endpoint = API_BASE ? `${API_BASE}/api/compute/solve` : '/api/compute/solve';
-      const safeStringifyPayload = (value) => {
-        const seen = new WeakSet();
-        return JSON.stringify(value, (_key, val) => {
-          if (val === null || val === undefined) return val;
-
-          const t = typeof val;
-          if (t === 'function' || t === 'symbol') return undefined;
-
-          // Drop DOM nodes / React internals if they ever get mixed into payload
-          if (typeof Element !== 'undefined' && val instanceof Element) return undefined;
-          if (typeof HTMLElement !== 'undefined' && val instanceof HTMLElement) return undefined;
-          if (typeof SVGElement !== 'undefined' && val instanceof SVGElement) return undefined;
-
-          if (t === 'object') {
-            if (seen.has(val)) return undefined;
-            seen.add(val);
-
-            // React elements/fibers often have $$typeof; dropping is safest
-            const maybeType = (val && val.$$typeof);
-            if (maybeType && typeof maybeType === 'string') return undefined;
-          }
-
-          return val;
-        });
-      };
-
+      const endpoint = '/api/compute/solve';
       const response = await fetch(endpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'text/event-stream'
-        },
-        body: safeStringifyPayload(payload),
-        signal: abortControllerRef.current.signal
+        headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+        body: JSON.stringify(payload),
+        signal: abortRef.current.signal,
       });
 
-      if (!response.ok) {
-        setMessages(prev => prev.map(m => m.id === assistantMessage.id ? { ...m, error: { message: 'Failed to connect to engine.' }, isProcessing: false } : m));
-        setIsProcessing(false);
-        return;
-      }
-
-      if (!response.body) {
-        setMessages(prev => prev.map(m => m.id === assistantMessage.id ? { ...m, error: { message: 'Engine returned no stream (SSE body missing).' }, isProcessing: false } : m));
+      if (!response.ok || !response.body) {
+        setEntries(prev => prev.map(e =>
+          e.id === entryId ? { ...e, error: 'Engine unavailable.', isProcessing: false } : e
+        ));
         setIsProcessing(false);
         return;
       }
@@ -182,314 +102,243 @@ export default function App() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
-      let receivedFinal = false;
 
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
-
         buffer += decoder.decode(value);
         const parts = buffer.split('\n\n');
         buffer = parts.pop();
 
-        parts.forEach(part => {
-          if (part.startsWith('data: ')) {
-            let data;
-            try {
-              data = JSON.parse(part.replace('data: ', ''));
-            } catch (e) {
-              // Don’t kill the SSE loop if we received an incomplete/malformed chunk.
-              // Keep buffer logic intact and allow subsequent SSE events to arrive.
-              return;
+        for (const part of parts) {
+          if (!part.startsWith('data: ')) continue;
+          let data;
+          try { data = JSON.parse(part.slice(6)); } catch { continue; }
+
+          setEntries(prev => prev.map(e => {
+            if (e.id !== entryId) return e;
+
+            // New rich event types
+            if (data.type === 'derivation_step' ||
+                data.type === 'equation_state' ||
+                data.type === 'section' ||
+                data.type === 'verification') {
+              return { ...e, events: [...(e.events || []), data] };
             }
-            
-            // Side effects for parameter collection must NOT be inside setMessages updater.
-            if (data.type === 'needs_parameters') {
-              setPendingCompute({ payload, assistantMessage, saveContext });
-              setMissingParams(data.missing_params || []);
-              setParameterPrompt(data.problem_description || saveContext.currentInput);
-              setShowParamDialog(true);
+            if (data.type === 'problem_parsed') {
+              return {
+                ...e,
+                domain: data.domain,
+                capabilities: data.capabilities || [],
+                events: [...(e.events || []), data],
+              };
             }
-
-            const MAX_STEPS = 220; // prevents unbounded memory growth on long streams
-            setMessages(prev => prev.map(msg => {
-              if (msg.id !== assistantMessage.id) return msg;
-
-              if (data.type === 'step') {
-                const nextSteps = [...(msg.steps || []), data.content];
-                return { ...msg, steps: nextSteps.length > MAX_STEPS ? nextSteps.slice(nextSteps.length - MAX_STEPS) : nextSteps };
-              } else if (data.type === 'table') {
-                return { ...msg, tables: [...(msg.tables || []), data] };
-              } else if (data.type === 'units') {
-                return { ...msg, units: [...msg.units, ...(data.data || [])] };
-              } else if (data.type === 'final') {
-                return { ...msg, final: (msg.final ? msg.final + '\n\n' : '') + data.answer };
-              } else if (data.type === 'diagram') {
-                return { ...msg, diagrams: [...msg.diagrams, data] };
-              } else if (data.type === 'needs_parameters') {
-                return {
-                  ...msg,
-                  isProcessing: false,
-                  steps: [
-                    ...(msg.steps || []),
-                    data.message || 'Parameter is not specified.',
-                  ],
-                };
-              } else if (data.type === 'error') {
-                return { ...msg, error: { message: data.message }, isProcessing: false };
-              }
-
-              return msg;
-            }));
-          }
-        });
+            if (data.type === 'diagram') {
+              return { ...e, diagrams: [...(e.diagrams || []), data] };
+            }
+            if (data.type === 'final') {
+              return {
+                ...e,
+                final: (e.final ? e.final + '\n\n' : '') + data.answer,
+                summary: data.summary || e.summary,
+              };
+            }
+            // Legacy step type
+            if (data.type === 'step') {
+              return { ...e, steps: [...(e.steps || []), data.content] };
+            }
+            if (data.type === 'error') {
+              return { ...e, error: data.message, isProcessing: false };
+            }
+            return e;
+          }));
+        }
       }
 
-      setMessages(prev => {
-        const finalMessages = prev.map(m => m.id === assistantMessage.id ? { ...m, isProcessing: false } : m);
-        const finalAssistant = finalMessages.find(m => m.id === assistantMessage.id);
-        if (finalAssistant) {
+      setEntries(prev => {
+        const finalEntries = prev.map(e =>
+          e.id === entryId ? { ...e, isProcessing: false } : e
+        );
+        const finalEntry = finalEntries.find(e => e.id === entryId);
+        if (finalEntry) {
           saveComputation({
             type: 'Computation',
-            title: saveContext.currentInput?.substring(0, 50) || 'Computation',
-            topic: 'Engineering', // Can be enhanced to detect from routing
-            input: saveContext.currentInput,
-            result: finalAssistant.final,
-            final: finalAssistant.final,
-            steps: finalAssistant.steps || [],
-            diagrams: finalAssistant.diagrams || [],
-            tables: finalAssistant.tables || [],
-            units: finalAssistant.units || [],
-            image: saveContext.currentImage,
-            timestamp: Date.now()
+            title: query.substring(0, 60),
+            topic: finalEntry.domain || 'Engineering',
+            input: query,
+            result: finalEntry.final,
+            final: finalEntry.final,
+            steps: finalEntry.steps || [],
+            diagrams: finalEntry.diagrams || [],
+            events: finalEntry.events || [],
+            timestamp: Date.now(),
           }).then(() => loadHistory());
         }
-        return finalMessages;
+        return finalEntries;
       });
 
-    } catch (error) {
-      if (error?.name === 'AbortError') return;
-      console.error('SSE/compute fetch failed:', error);
-      const details = error?.message ? ` (${error.message})` : '';
-      setMessages(prev => prev.map(m => m.id === assistantMessage.id ? { ...m, error: { message: `Connection interrupted.${details}` }, isProcessing: false } : m));
+    } catch (err) {
+      if (err?.name === 'AbortError') return;
+      setEntries(prev => prev.map(e =>
+        e.id === entryId ? { ...e, error: err.message || 'Connection error.', isProcessing: false } : e
+      ));
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const handleCompute = async (supplementalParams = null, existingPending = null) => {
-    if (!online || isProcessing) return;
-
-    const activePending = existingPending || pendingCompute;
-    if (!activePending && !inputText.trim() && !imagePreview && !dataFile) return;
-
-    const timestamp = Date.now();
-    const saveContext = activePending?.saveContext || {
-      timestamp,
-      userMessageId: timestamp.toString(),
-      currentInput: inputText,
-      currentImage: imagePreview,
-      currentData: dataFile,
-      currentConfig: plotConfig,
-    };
-
-    const assistantMessage = activePending?.assistantMessage || {
-      id: (timestamp + 1).toString(),
-      role: 'assistant',
-      isProcessing: true,
-      steps: [],
-      final: null,
-      diagrams: [],
-      tables: [],
-      units: [],
-      subProblems: {},
-      timestamp,
-    };
-
-    const payload = {
-      type: saveContext.currentImage ? 'image' : (saveContext.currentData ? 'data' : 'text'),
-      input: saveContext.currentImage || (saveContext.currentData ? saveContext.currentData.base64 : saveContext.currentInput),
-      filename: saveContext.currentData?.name,
-      plot_config: saveContext.currentConfig,
-      supplemental_params: supplementalParams || {},
-      history: []
-    };
-
-    if (!activePending) {
-      setInputText('');
-      setImagePreview(null);
-      setDataFile(null);
-      setPlotConfig({ type: 'line', title: '', xlabel: '', ylabel: '' });
-    }
-
-    setPendingCompute(null);
-    await executeCompute({ payload, assistantMessage, saveContext });
-  };
-
-  const handleParameterSubmit = async (values) => {
-    if (!pendingCompute) return;
-    await handleCompute(values, pendingCompute);
-  };
-
-  const handleParameterCancel = () => {
-    abortControllerRef.current?.abort();
-    setPendingCompute(null);
-    setShowParamDialog(false);
-    setMissingParams([]);
-    setParameterPrompt('');
+  const stopProcessing = () => {
+    abortRef.current?.abort();
     setIsProcessing(false);
+    setEntries(prev => prev.map(e =>
+      e.isProcessing ? { ...e, isProcessing: false } : e
+    ));
   };
 
-  const deleteMessage = (id) => {
-    setMessages(prev => prev.filter(m => String(m.id) !== String(id)));
-  };
-
-  const clearChat = async () => {
-    if (window.confirm('Delete this session?')) {
-      setMessages([]);
+  const clearAll = async () => {
+    if (window.confirm('Clear this session?')) {
+      setEntries([]);
       await clearCurrentSession();
     }
   };
 
-  const stopProcessing = () => {
-    abortControllerRef.current?.abort();
-    setIsProcessing(false);
-    setMessages(prev => {
-      const copy = [...prev];
-      const lastAssistantIndex = [...copy].reverse().findIndex(msg => msg.role === 'assistant' && msg.isProcessing);
-      if (lastAssistantIndex === -1) return prev;
-      const actualIndex = copy.length - 1 - lastAssistantIndex;
-      copy[actualIndex] = {
-        ...copy[actualIndex],
-        isProcessing: false,
-        steps: [...(copy[actualIndex].steps || []), 'Calculation stopped by user.'],
-      };
-      return copy;
-    });
+  const deleteEntry = (id) => {
+    setEntries(prev => prev.filter(e => String(e.id) !== String(id)));
   };
 
+  const loadFromHistory = (item) => {
+    if (item.events || item.final) {
+      setEntries(prev => [...prev, {
+        id: `hist_${Date.now()}`,
+        query: item.input,
+        domain: item.topic,
+        events: item.events || [],
+        diagrams: item.diagrams || [],
+        final: item.final,
+        summary: [],
+        steps: item.steps || [],
+        isProcessing: false,
+        error: null,
+        timestamp: item.timestamp,
+      }]);
+    }
+    setShowHistory(false);
+  };
+
+  const EXAMPLE_QUERIES = [
+    { label: 'Solve system', query: 'Solve: 3x + 2y = 12, x - y = 1', domain: 'Algebra' },
+    { label: 'Beam analysis', query: 'Simply supported beam, L = 6m, UDL w = 10 kN/m', domain: 'Structural' },
+    { label: 'Differentiate', query: 'Differentiate x³·sin(x) with respect to x', domain: 'Calculus' },
+    { label: 'RC circuit', query: 'RC circuit: R = 2kΩ, C = 100μF, V₀ = 12V', domain: 'Circuits' },
+    { label: 'Projectile', query: 'Projectile launched at 30° with u = 40 m/s', domain: 'Mechanics' },
+    { label: 'Carnot engine', query: 'Carnot engine: T_H = 800K, T_C = 300K, Q_H = 5000J', domain: 'Thermo' },
+  ];
+
   return (
-    <div className="min-h-screen bg-[#0b0b0b] text-white flex flex-col font-sans selection:bg-white/20">
-      <header className="p-6 border-b border-white/5 flex items-center justify-between sticky top-0 bg-[#0b0b0b]/80 backdrop-blur-md z-40">
+    <div className="min-h-screen bg-[#08080f] text-slate-200 flex flex-col font-sans">
+
+      {/* Header */}
+      <header className="h-14 flex items-center justify-between px-6 border-b border-[#1d1e2c] bg-[#0a0a12]/90 backdrop-blur-md sticky top-0 z-50">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-white text-black flex items-center justify-center font-black rounded-sm">M</div>
-          <h1 className="text-xs font-black uppercase tracking-widest">MATHS STUDIO</h1>
+          <div className="flex items-center justify-center w-7 h-7 rounded bg-blue-600 text-white font-black text-xs">E</div>
+          <div>
+            <span className="text-[11px] font-black tracking-[0.2em] uppercase text-slate-100">Engineering</span>
+            <span className="text-[11px] font-black tracking-[0.2em] uppercase text-blue-400"> Studio</span>
+          </div>
+          <div className="hidden sm:block h-4 w-px bg-white/10 mx-2" />
+          <span className="hidden sm:block text-[10px] text-slate-500 font-mono uppercase tracking-widest">Derivation-first computation</span>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={clearChat} className="p-2 hover:bg-white/5 rounded-full"><Trash2 className="w-4 h-4 opacity-50" /></button>
-          <button onClick={() => setShowHistory(!showHistory)} className="p-2 hover:bg-white/5 rounded-full"><History className="w-5 h-5" /></button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={clearAll}
+            className="p-2 rounded hover:bg-white/5 text-slate-500 hover:text-slate-300 transition-colors"
+            title="Clear session"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setShowHistory(!showHistory)}
+            className="p-2 rounded hover:bg-white/5 text-slate-500 hover:text-slate-300 transition-colors"
+            title="History"
+          >
+            <History className="w-4 h-4" />
+          </button>
         </div>
       </header>
 
-      <main className="flex-1 overflow-hidden flex flex-col relative">
-        <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 p-4 md:p-8 space-y-8 scroll-smooth pb-48">
-          {messages.length === 0 ? (
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="min-h-full flex flex-col items-center justify-center text-center px-4 py-12"
-            >
-              <div className="w-16 h-16 md:w-20 md:h-20 bg-white text-black flex items-center justify-center font-black rounded-2xl mb-6 shadow-2xl rotate-3">
-                <span className="text-3xl md:text-4xl">M</span>
+      {/* Main layout */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Notebook workspace */}
+        <main className="flex-1 flex flex-col overflow-hidden">
+          {entries.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center px-6 py-16">
+              <div className="max-w-2xl w-full">
+                <div className="mb-10 text-center">
+                  <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-blue-600/10 border border-blue-500/20 mb-5">
+                    <span className="text-2xl font-black text-blue-400">∑</span>
+                  </div>
+                  <h1 className="text-2xl font-black tracking-tight text-slate-100 mb-2">
+                    Engineering Computation Studio
+                  </h1>
+                  <p className="text-sm text-slate-500 font-mono">
+                    Symbolic derivations · Step-by-step solutions · Publication-quality output
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-8">
+                  {EXAMPLE_QUERIES.map(ex => (
+                    <button
+                      key={ex.label}
+                      onClick={() => setInputText(ex.query)}
+                      className="text-left p-3.5 rounded-lg bg-[#0f101a] border border-[#1d1e2c] hover:border-blue-500/40 hover:bg-[#111222] transition-all group"
+                    >
+                      <div className="text-[9px] font-black uppercase tracking-widest text-blue-400/60 mb-1.5 group-hover:text-blue-400 transition-colors">
+                        {ex.domain}
+                      </div>
+                      <div className="text-xs text-slate-400 group-hover:text-slate-200 transition-colors leading-relaxed">
+                        {ex.label}
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
-              <h2 className="text-3xl md:text-6xl font-black uppercase tracking-tighter mb-4 leading-none">
-                Welcome to<br/>
-                <span className="text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-white/20">Maths Studio.</span>
-              </h2>
-              <p className="text-[9px] md:text-xs font-mono opacity-30 uppercase tracking-[0.3em] md:tracking-[0.5em] mb-12 md:mb-16">
-                By Jhaytee • Precision Engineering Computing
-              </p>
-              
-              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 w-full max-w-2xl">
-                {[
-                  { label: "Structural", icon: "🏗️" },
-                  { label: "Calculus", icon: "∫" },
-                  { label: "Fluids", icon: "💧" },
-                  { label: "Thermo", icon: "🔥" },
-                  { label: "Mechanics", icon: "⚙️" },
-                  { label: "Algebra", icon: "χ" }
-                ].map(topic => (
-                  <button 
-                    key={topic.label}
-                    onClick={() => setInputText(`Analyze this ${topic.label} problem: `)}
-                    className="p-3 md:p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-white/20 transition-all text-left group"
-                  >
-                    <span className="block text-lg md:text-xl mb-2 grayscale group-hover:grayscale-0 transition-all">{topic.icon}</span>
-                    <span className="text-[9px] md:text-[10px] font-black uppercase tracking-widest block">{topic.label}</span>
-                  </button>
-                ))}
-              </div>
-            </motion.div>
+            </div>
           ) : (
-            messages.map((msg) => (
-              <MessageBubble 
-                key={msg.id} 
-                msg={msg} 
-                onDelete={() => deleteMessage(msg.id)} 
+            <div ref={scrollRef} className="flex-1 overflow-y-auto">
+              <NotebookWorkspace
+                entries={entries}
+                onDelete={deleteEntry}
               />
-            ))
+            </div>
           )}
-        </div>
 
-        <div className="fixed bottom-0 left-0 right-0 z-40 bg-gradient-to-t from-[#0b0b0b] via-[#0b0b0b] to-transparent pt-12 pb-6 px-4 md:px-8 pointer-events-none">
-          <div className="max-w-4xl mx-auto w-full pointer-events-auto bg-[#1a1a1a]/80 backdrop-blur-xl border border-white/10 rounded-2xl p-2 shadow-2xl">
-            <ChatInput 
-              inputText={inputText}
-              setInputText={setInputText}
-              imagePreview={imagePreview}
-              setImagePreview={setImagePreview}
-              dataFile={dataFile}
-              setDataFile={setDataFile}
-              plotConfig={plotConfig}
-              setPlotConfig={setPlotConfig}
-              handleCompute={handleCompute}
-              isProcessing={isProcessing}
-              fileInputRef={fileInputRef}
-              onStop={stopProcessing}
-            />
+          {/* Input area */}
+          <div className="shrink-0 border-t border-[#1d1e2c] bg-[#09090f]/80 backdrop-blur-sm p-4">
+            <div className="max-w-4xl mx-auto">
+              <EngineeringInput
+                value={inputText}
+                onChange={setInputText}
+                onSubmit={handleCompute}
+                onStop={stopProcessing}
+                isProcessing={isProcessing}
+              />
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
 
-      <AnimatePresence>
-        {showHistory && (
-          <>
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowHistory(false)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden"
-            />
-            <HistorySidebar 
+        {/* Sidebar */}
+        <AnimatePresence>
+          {showHistory && (
+            <NotebookSidebar
               history={history}
-              loadHistory={loadHistory}
-              setShowHistory={setShowHistory}
-              setMessages={setMessages}
+              onLoad={loadFromHistory}
+              onClose={() => setShowHistory(false)}
               deleteHistoryItem={deleteHistoryItem}
-              setShowDocs={setShowDocs}
+              onRefresh={loadHistory}
             />
-          </>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showDocs && (
-          <DocsPage onClose={() => setShowDocs(false)} />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showParamDialog && (
-          <ParameterDialog
-            isOpen={showParamDialog}
-            missingParams={missingParams}
-            problemDescription={parameterPrompt}
-            onSubmit={handleParameterSubmit}
-            onCancel={handleParameterCancel}
-          />
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

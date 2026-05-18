@@ -1,24 +1,10 @@
 @import "tailwindcss";
 
-@theme {
-  --color-studio-bg: #0b0b0b;
-  --color-studio-card: #1a1a1a;
-}
-
 :root {
-  font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
-
-  --bg-primary: #0b0b0b;
-  --bg-secondary: #1a1a1a;
-  --bg-tertiary: #222222;
-  --text-primary: #ffffff;
-  --text-muted: rgba(255, 255, 255, 0.5);
-  --text-faint: rgba(255, 255, 255, 0.15);
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-soft: rgba(255, 255, 255, 0.15);
-  --input-bg: rgba(255, 255, 255, 0.05);
 }
 
 body {
@@ -26,144 +12,122 @@ body {
   width: 100vw;
   overflow-x: hidden;
   height: 100%;
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  transition: background-color 0.3s ease, color 0.3s ease;
+  background-color: #08080f;
+  color: #cbd5e1;
 }
 
-#root {
-  width: 100%;
+html, body, #root {
   height: 100%;
-  overflow-x: hidden;
+  min-height: 100vh;
 }
 
-/* ── Light Mode Theme ── */
-body.light-mode {
-  --bg-primary: #f4f4f5;
-  --bg-secondary: #ffffff;
-  --bg-tertiary: #e8e8ea;
-  --text-primary: #111111;
-  --text-muted: rgba(0, 0, 0, 0.55);
-  --text-faint: rgba(0, 0, 0, 0.2);
-  --border-subtle: rgba(0, 0, 0, 0.08);
-  --border-soft: rgba(0, 0, 0, 0.15);
-  --input-bg: rgba(0, 0, 0, 0.04);
+/* ── KaTeX sizing fix ── */
+.katex {
+  font-size: 1em;
+  color: #e2e8f0;
 }
 
-/* ── Math and Table wrap/scroll robustness ── */
-.math-render, .markdown-content, .prose {
-  word-wrap: break-word;
-  overflow-wrap: break-word;
-  max-width: 100%;
-}
-
-.markdown-content > *:first-child,
-.math-render > *:first-child {
-  margin-top: 0;
-}
-
-.markdown-content > *:last-child,
-.math-render > *:last-child {
-  margin-bottom: 0;
-}
-
-.markdown-content h1,
-.markdown-content h2,
-.markdown-content h3,
-.math-render h1,
-.math-render h2,
-.math-render h3 {
-  letter-spacing: -0.02em;
-}
-
-.math-render table, .markdown-content table {
-  display: block;
-  overflow-x: auto;
-  white-space: nowrap;
-}
-
-.math-render table td,
-.math-render table th,
-.markdown-content table td,
-.markdown-content table th {
-  padding: 6px 14px;
-  border: 1px solid var(--border-subtle);
-}
-
-.markdown-content ol,
-.markdown-content ul {
-  padding-left: 1.4em;
-}
-
-.markdown-content li {
-  margin-bottom: 4px;
-}
-
-/* ── Scrollbar ── */
-::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--border-soft);
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-faint);
-}
-
-/* ── Selection ── */
-::selection {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-body.light-mode ::selection {
-  background: rgba(0, 0, 0, 0.12);
-}
-
-/* ── KaTeX ── */
 .katex-display {
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 4px 0;
+  padding: 0.25rem 0;
+  margin: 0;
 }
 
-body.light-mode .katex {
-  color: var(--text-primary);
+.katex-display > .katex {
+  font-size: 1.1em;
 }
 
-/* ── Code blocks ── */
-.markdown-content pre {
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  padding: 14px 18px;
+/* ── Scrollbar styling ── */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1d1e2c;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2d2e3c;
+}
+
+/* ── Engineering notebook monospace ── */
+.font-mono {
+  font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", "Consolas", monospace;
+  font-feature-settings: "liga" 1, "calt" 1;
+}
+
+/* ── Prose/Markdown styling ── */
+.prose {
+  color: #cbd5e1;
+}
+
+.prose h1, .prose h2, .prose h3 {
+  color: #f1f5f9;
+}
+
+.prose code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.8em;
+  background: rgba(255,255,255,0.05);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  border: 1px solid rgba(255,255,255,0.06);
+  color: #93c5fd;
+}
+
+.prose pre {
+  background: #0a0b14;
+  border: 1px solid #1d1e2c;
+  border-radius: 6px;
+  padding: 1rem;
   overflow-x: auto;
-  font-size: 12px;
 }
 
-.markdown-content code {
-  background: var(--input-bg);
-  border-radius: 4px;
-  padding: 1px 5px;
-  font-size: 12px;
+.prose pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: #94a3b8;
 }
 
-/* ── Mobile input ── */
+/* ── Plotly chart dark theme overrides ── */
+.js-plotly-plot .plotly .main-svg {
+  background: transparent !important;
+}
+
+/* ── Custom animations ── */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+.animate-pulse-slow {
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+/* ── Beam diagram SVG text ── */
+svg text {
+  user-select: none;
+}
+
+/* ── Fix textarea resize handle ── */
+textarea {
+  resize: none;
+}
+
+/* ── Mobile optimization ── */
 @media (max-width: 640px) {
-  .katex-display {
-    font-size: 90%;
+  .font-mono {
+    font-size: 0.75rem;
   }
-}
-
-/* ── Animations ── */
-@keyframes pulse-soft {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-.animate-pulse-soft {
-  animation: pulse-soft 2s ease-in-out infinite;
+  .katex {
+    font-size: 0.9em;
+  }
 }
