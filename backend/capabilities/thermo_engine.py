@@ -104,7 +104,10 @@ async def _ideal_gas(params: dict):
 
     if len(unknowns) == 0:
         yield {"type": "step", "content": "All variables known — verifying PV = nRT."}
-        check = abs(P * V - n * R * T) / (n * R * T) < 0.01
+        # Guard against division by zero
+        check = False
+        if n is not None and R and T and n * R * T != 0:
+            check = abs(P * V - n * R * T) / (n * R * T) < 0.01
         yield {
             "type": "verification",
             "passed": check,
@@ -280,7 +283,7 @@ async def _specific_heat(params: dict):
             yield _step("solve_dT", "Solve for ΔT",
                         "\\Delta T = \\frac{Q}{mc}",
                         f"\\Delta T = \\frac{{{_sf(Q)}}}{{{_sf(m)} \\times {_sf(c)}}} = {_sf(delta_T)}\\text{{ K}}", "")
-        elif unknown == "c" and Q and m and delta_T:
+        elif unknown == "c" and Q and m and delta_T is not None:
             c = Q / (m * delta_T)
             yield _step("solve_c", "Solve for specific heat capacity",
                         "c = \\frac{Q}{m\\Delta T}",
@@ -382,10 +385,11 @@ async def _adiabatic_process(params: dict):
 
         if T1:
             T2_calc = T1 * (V1 / V2) ** (gamma - 1)
+            gamma_minus_1 = gamma - 1
             yield _step("adiabatic_temperature",
                         "Find T₂ from TV^(γ-1) = const",
                         "T_2 = T_1 \\left(\\frac{V_1}{V_2}\\right)^{\\gamma-1}",
-                        f"T_2 = {_sf(T1)} \\times \\left(\\frac{{{_sf(V1)}}}{{{_sf(V2)}}}\\right)^{{{_sf(gamma-1)}}} = {_sf(T2_calc)}\\text{{ K}}", "")
+                        f"T_2 = {_sf(T1)} \\times \\left(\\frac{{{_sf(V1)}}}{{{_sf(V2)}}}\\right)^{{{_sf(gamma_minus_1)}}} = {_sf(T2_calc)}\\text{{ K}}", "")
 
         yield {
             "type": "final",
