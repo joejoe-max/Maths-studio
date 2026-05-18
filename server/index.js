@@ -58,10 +58,9 @@ async function startServer() {
   app.use(cors());
   app.use(morgan('dev'));
   app.use(express.json({ limit: '10mb' }));
-  app.use(rateLimiter);
 
-  // API Routes
-  app.use('/api/compute', computeRouter);
+  // API Routes (rate limiter applies only to API routes)
+  app.use('/api/compute', rateLimiter, computeRouter);
 
   // Install Python Dependencies
   try {

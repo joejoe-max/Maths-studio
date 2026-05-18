@@ -96,8 +96,16 @@ solve_semaphore       = asyncio.Semaphore(MAX_CONCURRENT_SOLVES)
 request_windows: dict[str, list[float]] = {}
 request_windows_lock  = asyncio.Lock()
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-gemini_client  = genai.Client(api_key=GEMINI_API_KEY)
+GEMINI_API_KEY = os.environ.get("AI_INTEGRATIONS_GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY", "")
+GEMINI_BASE_URL = os.environ.get("AI_INTEGRATIONS_GEMINI_BASE_URL")
+
+if GEMINI_BASE_URL:
+    gemini_client = genai.Client(
+        api_key=GEMINI_API_KEY,
+        http_options={"api_version": "", "base_url": GEMINI_BASE_URL},
+    )
+else:
+    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
 GEMINI_MODELS = [
     "gemini-2.5-flash-lite",
@@ -841,13 +849,17 @@ async def _explain_for_student(input_summary: str, raw_answer: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 _SOLVER_MAP: dict[str, tuple[str, str]] = {
-    "algebra":    ("solvers.algebra",       "solve_algebra"),
-    "calculus":   ("solvers.calculus",       "solve_calculus"),
-    "mechanics":  ("solvers.mechanics",      "solve_mechanics"),
-    "structural": ("solvers.structural",     "solve_structural"),
+    # ── New derivation-first capability engines ────────────────────────────
+    "algebra":    ("capabilities.symbolic_engine",  "solve_algebra"),
+    "calculus":   ("capabilities.calculus_engine",  "solve_calculus"),
+    "mechanics":  ("capabilities.mechanics_engine", "solve_mechanics"),
+    "structural": ("capabilities.beam_engine",      "solve_beam"),
+    "thermo":     ("capabilities.thermo_engine",    "solve_thermo"),
+    "circuits":   ("capabilities.circuit_engine",   "solve_circuits"),
+    # ── Matrix sub-domain (routed from algebra when 'matrix' keyword present)
+    "matrix":     ("capabilities.matrix_engine",    "solve_matrix"),
+    # ── Legacy solvers (still used for these domains) ──────────────────────
     "fluids":     ("solvers.fluids",         "solve_fluids"),
-    "thermo":     ("solvers.thermodynamics", "solve_thermo"),
-    "circuits":   ("solvers.circuits",       "solve_circuits"),
     "physics":    ("solvers.physics",        "solve_physics"),
     "controls":   ("solvers.controls",       "solve_controls"),
     "statistics": ("solvers.statistics",     "solve_statistics"),
@@ -860,6 +872,7 @@ _PT_DOMAIN_OVERRIDE: dict[str, str] = {
     "beam_deflection":       "structural",
     "cantilever_beam":       "structural",
     "simply_supported_beam": "structural",
+    "fixed_beam":            "structural",
     "truss_analysis":        "structural",
     "bernoulli_equation":    "fluids",
     "hydrostatics":          "fluids",
@@ -871,6 +884,13 @@ _PT_DOMAIN_OVERRIDE: dict[str, str] = {
     "step_response":         "controls",
     "linear_regression":     "statistics",
     "hypothesis_test":       "statistics",
+    # Matrix sub-domain
+    "matrix_operations":     "matrix",
+    "eigenvalue_analysis":   "matrix",
+    "determinant":           "matrix",
+    "matrix_inverse":        "matrix",
+    "row_reduction":         "matrix",
+    "linear_system":         "matrix",
     # FIX: ensure function_plot routes to data_viz
     "function_plot":         "data_viz",
     "scatter_plot":          "data_viz",
@@ -879,7 +899,20 @@ _PT_DOMAIN_OVERRIDE: dict[str, str] = {
 }
 
 
-def _get_solver(domain: str, problem_type: str):
+def _maybe_reroute_to_matrix(domain: str, raw_query: str) -> str:
+    """Re-route algebra queries that are clearly matrix problems."""
+    if domain != "algebra":
+        return domain
+    matrix_kws = ("matrix", "eigenvalue", "eigenvector", "determinant",
+                  "inverse of", "row reduce", "rref", "adjugate")
+    q = raw_query.lower()
+    if any(kw in q for kw in matrix_kws):
+        return "matrix"
+    return domain
+
+
+def _get_solver(domain: str, problem_type: str, raw_query: str = ""):
+    domain = _maybe_reroute_to_matrix(domain, raw_query)
     effective = _PT_DOMAIN_OVERRIDE.get(problem_type, domain).lower()
     entry = _SOLVER_MAP.get(effective) or _SOLVER_MAP.get(domain.lower())
     if entry is None:
@@ -1102,7 +1135,7 @@ async def solve(request: Request):
                     })
                     return
 
-                solver_fn = _get_solver(domain, problem_type)
+                solver_fn = _get_solver(domain, problem_type, raw_query=user_input)
                 if not solver_fn:
                     yield _evt({
                         "type":       "final",
