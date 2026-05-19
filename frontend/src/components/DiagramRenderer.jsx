@@ -1,5 +1,20 @@
 import React, { useEffect, useRef, useState } from 'react';
 
+/**
+ * Normalises diagram data so every chart component receives
+ * { x: number[], y: number[], ... } regardless of whether the
+ * backend emitted an array-of-objects [{ x, y }] or parallel arrays.
+ */
+function normaliseXY(data, xKey = 'x', yKey = 'y') {
+  if (!data) return { x: [], y: [] };
+  if (Array.isArray(data)) {
+    const x = data.map(p => p[xKey] ?? p.x ?? 0);
+    const y = data.map(p => p[yKey] ?? p.y ?? 0);
+    return { x, y };
+  }
+  return data;
+}
+
 function PlotlyChart({ data, layout, title }) {
   const ref = useRef(null);
   const [Plotly, setPlotly] = useState(null);
@@ -48,6 +63,31 @@ function PlotlyChart({ data, layout, title }) {
   );
 }
 
+function ImagePlot({ data, title }) {
+  const { image, caption } = data;
+  if (!image) return null;
+  return (
+    <div className="rounded-lg border border-[#1d1e2c] overflow-hidden bg-[#090a12] my-4">
+      {title && (
+        <div className="px-4 py-2.5 border-b border-[#1d1e2c]">
+          <span className="text-[9px] font-black uppercase tracking-[0.25em] text-slate-600">{title}</span>
+        </div>
+      )}
+      <div className="p-3">
+        <img
+          src={image}
+          alt={caption || title || 'Diagram'}
+          className="w-full h-auto rounded"
+          style={{ maxHeight: 420, objectFit: 'contain' }}
+        />
+        {caption && (
+          <p className="text-[10px] text-slate-500 font-mono mt-2 text-center">{caption}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function BeamSchematic({ data, title }) {
   const { span = 6, support_type = 'simply_supported', loads = [] } = data;
   const W = 500;
@@ -56,11 +96,6 @@ function BeamSchematic({ data, title }) {
   const beam_x0 = 50;
   const beam_x1 = W - 50;
   const beam_len = beam_x1 - beam_x0;
-  const scale = beam_len / span;
-
-  const supportPath = support_type === 'cantilever'
-    ? `M${beam_x0},${beam_y} L${beam_x0},${beam_y + 20} L${beam_x0 - 3},${beam_y + 20} L${beam_x0 - 3},${beam_y - 20} L${beam_x0 + 3},${beam_y - 20} L${beam_x0 + 3},${beam_y + 20}`
-    : null;
 
   return (
     <div className="rounded-lg border border-[#1d1e2c] overflow-hidden bg-[#090a12] my-4">
@@ -71,16 +106,12 @@ function BeamSchematic({ data, title }) {
       )}
       <div className="px-4 py-2">
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 160 }}>
-          {/* Beam */}
           <rect x={beam_x0} y={beam_y - 5} width={beam_len} height={10} fill="#3b82f6" rx={2} opacity={0.8} />
 
-          {/* Supports */}
           {support_type === 'simply_supported' && (
             <>
-              {/* Left triangle support */}
               <polygon points={`${beam_x0},${beam_y + 5} ${beam_x0 - 12},${beam_y + 25} ${beam_x0 + 12},${beam_y + 25}`} fill="#475569" />
               <line x1={beam_x0 - 16} y1={beam_y + 28} x2={beam_x0 + 16} y2={beam_y + 28} stroke="#475569" strokeWidth={2} />
-              {/* Right triangle support */}
               <polygon points={`${beam_x1},${beam_y + 5} ${beam_x1 - 12},${beam_y + 25} ${beam_x1 + 12},${beam_y + 25}`} fill="#475569" />
               <line x1={beam_x1 - 16} y1={beam_y + 28} x2={beam_x1 + 16} y2={beam_y + 28} stroke="#475569" strokeWidth={2} />
               <text x={beam_x0} y={beam_y + 42} textAnchor="middle" fontSize={9} fill="#64748b" fontFamily="monospace">A</text>
@@ -95,7 +126,6 @@ function BeamSchematic({ data, title }) {
             </>
           )}
 
-          {/* Loads */}
           {loads.map((load, i) => {
             if (load.type === 'point_load') {
               const lx = beam_x0 + (load.position / span) * beam_len;
@@ -137,13 +167,11 @@ function BeamSchematic({ data, title }) {
             return null;
           })}
 
-          {/* Span label */}
           <line x1={beam_x0} y1={H - 10} x2={beam_x1} y2={H - 10} stroke="#334155" strokeWidth={1} />
           <text x={(beam_x0 + beam_x1) / 2} y={H - 2} textAnchor="middle" fontSize={9} fill="#475569" fontFamily="monospace">
             L = {span} m
           </text>
 
-          {/* Arrow marker */}
           <defs>
             <marker id="arrow" markerWidth={6} markerHeight={6} refX={3} refY={3} orient="auto">
               <path d="M0,0 L6,3 L0,6 Z" fill="#f59e0b" />
@@ -156,11 +184,13 @@ function BeamSchematic({ data, title }) {
 }
 
 function ShearForceDiagram({ data, title }) {
-  const { x, V, x_label = 'Position (m)', y_label = 'Shear Force V (N)' } = data;
-  if (!x || !V) return null;
+  const norm = normaliseXY(data, 'x', Array.isArray(data) ? 'y' : (data.V ? 'V' : 'y'));
+  const xArr = norm.x ?? data.x;
+  const yArr = norm.y ?? data.V ?? data.y;
+  if (!xArr || !yArr) return null;
 
   const traces = [{
-    x, y: V,
+    x: xArr, y: yArr,
     type: 'scatter',
     mode: 'lines',
     fill: 'tozeroy',
@@ -174,19 +204,21 @@ function ShearForceDiagram({ data, title }) {
       title={title || 'Shear Force Diagram'}
       data={traces}
       layout={{
-        xaxis: { title: { text: x_label, font: { size: 10 } } },
-        yaxis: { title: { text: y_label, font: { size: 10 } } },
+        xaxis: { title: { text: data.x_label || 'Position (m)', font: { size: 10 } } },
+        yaxis: { title: { text: data.y_label || 'Shear Force V (N)', font: { size: 10 } } },
       }}
     />
   );
 }
 
 function BendingMomentDiagram({ data, title }) {
-  const { x, M, x_label = 'Position (m)', y_label = 'Bending Moment M (N·m)' } = data;
-  if (!x || !M) return null;
+  const norm = normaliseXY(data, 'x', Array.isArray(data) ? 'y' : (data.M ? 'M' : 'y'));
+  const xArr = norm.x ?? data.x;
+  const yArr = norm.y ?? data.M ?? data.y;
+  if (!xArr || !yArr) return null;
 
   const traces = [{
-    x, y: M,
+    x: xArr, y: yArr,
     type: 'scatter',
     mode: 'lines',
     fill: 'tozeroy',
@@ -200,23 +232,25 @@ function BendingMomentDiagram({ data, title }) {
       title={title || 'Bending Moment Diagram'}
       data={traces}
       layout={{
-        xaxis: { title: { text: x_label, font: { size: 10 } } },
-        yaxis: { title: { text: y_label, font: { size: 10 } } },
+        xaxis: { title: { text: data.x_label || 'Position (m)', font: { size: 10 } } },
+        yaxis: { title: { text: data.y_label || 'Bending Moment M (N·m)', font: { size: 10 } } },
       }}
     />
   );
 }
 
 function TimeSeriesDiagram({ data, title }) {
-  const { x, y, x_label = 'Time', y_label = 'Value' } = data;
-  if (!x || !y) return null;
+  const norm = normaliseXY(data);
+  const xArr = norm.x ?? data.x;
+  const yArr = norm.y ?? data.y;
+  if (!xArr || !yArr) return null;
 
   const traces = [{
-    x, y,
+    x: xArr, y: yArr,
     type: 'scatter',
     mode: 'lines',
     line: { color: '#10b981', width: 1.5 },
-    name: y_label,
+    name: data.y_label || 'Value',
   }];
 
   return (
@@ -224,32 +258,34 @@ function TimeSeriesDiagram({ data, title }) {
       title={title}
       data={traces}
       layout={{
-        xaxis: { title: { text: x_label, font: { size: 10 } } },
-        yaxis: { title: { text: y_label, font: { size: 10 } } },
+        xaxis: { title: { text: data.x_label || 'Time', font: { size: 10 } } },
+        yaxis: { title: { text: data.y_label || 'Value', font: { size: 10 } } },
       }}
     />
   );
 }
 
 function TrajectoryDiagram({ data, title }) {
-  const { x, y, peak, range: R } = data;
-  if (!x || !y) return null;
+  const norm = normaliseXY(data);
+  const xArr = norm.x ?? data.x;
+  const yArr = norm.y ?? data.y;
+  if (!xArr || !yArr) return null;
 
   const traces = [{
-    x, y,
+    x: xArr, y: yArr,
     type: 'scatter',
     mode: 'lines',
     line: { color: '#f59e0b', width: 2 },
     name: 'Trajectory',
   }];
 
-  if (peak) {
+  if (data.peak) {
     traces.push({
-      x: [peak.x], y: [peak.y],
+      x: [data.peak.x], y: [data.peak.y],
       type: 'scatter',
       mode: 'markers',
       marker: { color: '#fb7185', size: 8, symbol: 'circle' },
-      name: `Peak (${peak.y?.toFixed(2)} m)`,
+      name: `Peak (${data.peak.y?.toFixed(2)} m)`,
     });
   }
 
@@ -266,25 +302,27 @@ function TrajectoryDiagram({ data, title }) {
 }
 
 function FrequencySweep({ data, title }) {
-  const { x, y, resonant_frequency } = data;
-  if (!x || !y) return null;
+  const norm = normaliseXY(data);
+  const xArr = norm.x ?? data.x;
+  const yArr = norm.y ?? data.y;
+  if (!xArr || !yArr) return null;
 
   const traces = [{
-    x, y,
+    x: xArr, y: yArr,
     type: 'scatter',
     mode: 'lines',
     line: { color: '#38bdf8', width: 1.5 },
     name: '|Z(f)|',
   }];
 
-  if (resonant_frequency) {
+  if (data.resonant_frequency) {
     traces.push({
-      x: [resonant_frequency],
-      y: [Math.min(...y)],
+      x: [data.resonant_frequency],
+      y: [Math.min(...yArr)],
       type: 'scatter',
       mode: 'markers',
       marker: { color: '#f59e0b', size: 8 },
-      name: `f₀ = ${resonant_frequency.toFixed(2)} Hz`,
+      name: `f₀ = ${data.resonant_frequency.toFixed(2)} Hz`,
     });
   }
 
@@ -337,12 +375,54 @@ function PVDiagram({ data, title }) {
   );
 }
 
+function BodePlot({ data, title }) {
+  const { w, mag, phase } = data;
+  if (!w || !mag || !phase) return null;
+
+  const magTrace = {
+    x: w, y: mag,
+    type: 'scatter', mode: 'lines',
+    line: { color: '#3b82f6', width: 1.5 },
+    name: 'Magnitude (dB)',
+    xaxis: 'x', yaxis: 'y',
+  };
+  const phaseTrace = {
+    x: w, y: phase,
+    type: 'scatter', mode: 'lines',
+    line: { color: '#f59e0b', width: 1.5 },
+    name: 'Phase (°)',
+    xaxis: 'x', yaxis: 'y2',
+  };
+
+  return (
+    <PlotlyChart
+      title={title || 'Bode Plot'}
+      data={[magTrace, phaseTrace]}
+      layout={{
+        xaxis: { title: { text: 'Frequency ω (rad/s)', font: { size: 10 } }, type: 'log' },
+        yaxis: { title: { text: 'Magnitude (dB)', font: { size: 10 } } },
+        yaxis2: {
+          title: { text: 'Phase (°)', font: { size: 10 } },
+          overlaying: 'y',
+          side: 'right',
+          gridcolor: '#1d1e2c',
+          tickfont: { size: 10 },
+          zeroline: true,
+          zerolinecolor: '#2d2e3c',
+        },
+      }}
+    />
+  );
+}
+
 export default function DiagramRenderer({ diagram }) {
   const { diagram_type, data, title } = diagram;
 
   if (!data) return null;
 
   switch (diagram_type) {
+    case 'plot':
+      return <ImagePlot data={data} title={title} />;
     case 'beam_schematic':
       return <BeamSchematic data={data} title={title} />;
     case 'shear_force':
@@ -357,8 +437,24 @@ export default function DiagramRenderer({ diagram }) {
       return <FrequencySweep data={data} title={title} />;
     case 'pv_diagram':
       return <PVDiagram data={data} title={title} />;
-    default:
-      // Generic XY chart
+    case 'bode_plot':
+      return <BodePlot data={data} title={title} />;
+    default: {
+      // Handle array-of-objects format [{ x, y }]
+      if (Array.isArray(data) && data.length > 0 && 'x' in data[0]) {
+        const norm = normaliseXY(data);
+        return (
+          <PlotlyChart
+            title={title || diagram_type}
+            data={[{ x: norm.x, y: norm.y, type: 'scatter', mode: 'lines', line: { color: '#3b82f6', width: 1.5 } }]}
+            layout={{
+              xaxis: { title: { text: 'x', font: { size: 10 } } },
+              yaxis: { title: { text: 'y', font: { size: 10 } } },
+            }}
+          />
+        );
+      }
+      // Parallel-array format { x, y | V | M }
       if (data.x && (data.y || data.V || data.M)) {
         const yData = data.y || data.V || data.M;
         return (
@@ -372,6 +468,11 @@ export default function DiagramRenderer({ diagram }) {
           />
         );
       }
+      // Base64 image fallback
+      if (data.image) {
+        return <ImagePlot data={data} title={title} />;
+      }
       return null;
+    }
   }
 }
