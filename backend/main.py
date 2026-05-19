@@ -1191,29 +1191,37 @@ async def solve(request: Request):
                             yield _evt(chunk)
 
                 except asyncio.TimeoutError:
-                    yield _err(
-                        f"The **{domain}** solver took too long on this one. "
-                        "Try simplifying the problem or breaking it into smaller parts.",
-                        problem_id,
-                    )
+                    yield _evt({
+                        "type": "error",
+                        "status": "failed",
+                        "stage": "solving",
+                        "reason": (
+                            f"The {domain} solver exceeded the time limit "
+                            f"({int(SOLVE_TIMEOUT_SECONDS)}s). "
+                            "Try a simpler problem or break it into smaller parts."
+                        ),
+                        "recoverable": True,
+                        "fallback_action": "Simplify or split the problem.",
+                        "message": f"Solver timeout after {int(SOLVE_TIMEOUT_SECONDS)}s.",
+                        "problem_id": problem_id,
+                    })
                     continue
                 except Exception as exc:
                     logger.error(f"Solver error [{domain}]: {exc}", exc_info=True)
-                    yield _err(
-                        f"Something went wrong inside the **{domain}** solver: {exc}\n"
-                        "Double-check your values and try again.",
-                        problem_id,
-                    )
-                    continue
-
-                if raw_answer_parts:
-                    raw_combined = "\n\n".join(raw_answer_parts)
-                    explained = await _explain_for_student(input_summary, raw_combined)
+                    reason = str(exc)
+                    if len(reason) > 300:
+                        reason = reason[:300] + "\u2026"
                     yield _evt({
-                        "type":       "explanation",
-                        "answer":     explained,
+                        "type": "error",
+                        "status": "failed",
+                        "stage": "solving",
+                        "reason": reason,
+                        "recoverable": True,
+                        "fallback_action": "Check input values and units, then retry.",
+                        "message": reason,
                         "problem_id": problem_id,
                     })
+                    continue
 
         except Exception as exc:
             logger.error(f"Unexpected error in event_stream: {exc}", exc_info=True)

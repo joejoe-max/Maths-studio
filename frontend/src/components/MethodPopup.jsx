@@ -1,168 +1,175 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Zap, X, CheckCircle2 } from 'lucide-react';
+import { Zap, X, CheckCircle2, ArrowRight } from 'lucide-react';
 
-const METHOD_ICONS = {
-  'Substitution Method': '🔄',
-  'Elimination Method': '➖',
-  'Graphical Method': '📈',
-  'Matrix Method': '▦',
-  "Cramer's Rule": '⊞',
-  'Quadratic Formula': 'Δ',
-  'Completing the Square': '□',
-  'Factorization': '✕',
-  'Method of Joints': '🔩',
-  'Method of Sections': '✂️',
-  'Virtual Work Method': '⚡',
-  'Area Moment Method': '∫',
-  'Direct Integration': '∫',
-  'Integration by Parts': '∫',
-  'Substitution (Calculus)': '∫',
-  'Partial Fractions': '½',
-  'Direct Stiffness': '▤',
-  'Macaulay\'s Method': '〜',
-  'Loss Calculation': '△',
-};
-
-const METHOD_DESCRIPTIONS = {
-  'Substitution Method': 'Isolate one variable, substitute into the other equation',
-  'Elimination Method': 'Multiply equations to cancel a variable, then solve',
-  'Graphical Method': 'Plot both equations and find intersection point',
-  'Matrix Method': 'Represent as Ax = b and solve using matrix inversion',
-  "Cramer's Rule": 'Solve using determinants of the coefficient matrix',
-  'Quadratic Formula': 'Apply x = (−b ± √(b²−4ac)) / 2a directly',
-  'Completing the Square': 'Rewrite in vertex form to reveal roots',
-  'Factorization': 'Factor the polynomial into linear/quadratic terms',
-  'Method of Joints': 'Analyse forces at each joint in sequence',
-  'Method of Sections': 'Cut the truss and apply equilibrium to a section',
-  'Virtual Work Method': 'Apply principle of virtual displacements',
-  'Area Moment Method': 'Use moment-area theorems for beam deflection',
-  'Direct Integration': 'Integrate the load function stepwise',
-  'Macaulay\'s Method': 'Use singularity functions for beam loading',
-};
-
-export default function MethodPopup({ isOpen, methods, domain, problemType, problemDescription, onSelect, onAutoSelect, onCancel, darkMode }) {
+export default function MethodPopup({
+  isOpen, methods, domain, problemDescription,
+  onSelect, onAutoSelect, onCancel,
+}) {
   const [selected, setSelected] = useState(null);
 
   if (!isOpen) return null;
 
-  const bg = darkMode === false ? 'bg-white border-gray-200' : 'bg-[#1a1a1a] border-white/10';
-  const headerBg = darkMode === false ? 'bg-gray-50 border-gray-100' : 'bg-white/5 border-white/5';
-  const textCls = darkMode === false ? 'text-gray-900' : 'text-white';
-  const mutedCls = darkMode === false ? 'text-gray-500' : 'text-white/50';
-  const labelCls = darkMode === false ? 'text-gray-400' : 'text-white/30';
-  const cardBase = darkMode === false
-    ? 'border border-gray-200 bg-gray-50 hover:border-gray-400 hover:bg-gray-100'
-    : 'border border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10';
-  const cardSelected = darkMode === false
-    ? 'border-blue-500 bg-blue-50'
-    : 'border-blue-400/60 bg-blue-500/10';
-  const cancelCls = darkMode === false
-    ? 'bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-700'
-    : 'bg-white/5 hover:bg-white/10 border border-white/10 text-white';
-
   const handleContinue = () => {
     if (!selected) return;
-    onSelect(selected);
+    const m = selected;
     setSelected(null);
+    onSelect(m.id || m.label);
   };
 
-  const handleAutoSelect = () => {
-    onAutoSelect();
+  const handleAuto = () => {
     setSelected(null);
+    onAutoSelect();
   };
+
+  const handleCancel = () => {
+    setSelected(null);
+    onCancel();
+  };
+
+  const domainColor = {
+    algebra:    'text-violet-400  border-violet-500/30 bg-violet-500/5',
+    calculus:   'text-indigo-400  border-indigo-500/30 bg-indigo-500/5',
+    structural: 'text-amber-400   border-amber-500/30  bg-amber-500/5',
+    mechanics:  'text-orange-400  border-orange-500/30 bg-orange-500/5',
+    circuits:   'text-green-400   border-green-500/30  bg-green-500/5',
+    thermo:     'text-red-400     border-red-500/30    bg-red-500/5',
+    fluids:     'text-blue-400    border-blue-500/30   bg-blue-500/5',
+    statistics: 'text-cyan-400    border-cyan-500/30   bg-cyan-500/5',
+  }[domain] || 'text-slate-400 border-slate-500/30 bg-slate-500/5';
 
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) handleCancel(); }}
     >
       <motion.div
-        initial={{ scale: 0.92, opacity: 0, y: 10 }}
+        initial={{ scale: 0.94, opacity: 0, y: 12 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.92, opacity: 0, y: 10 }}
-        transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-        className={`${bg} border rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden`}
+        exit={{ scale: 0.94, opacity: 0, y: 12 }}
+        transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+        className="bg-[#0f1018] border border-[#1d1e2c] rounded-xl max-w-lg w-full shadow-2xl overflow-hidden"
+        onClick={e => e.stopPropagation()}
       >
-        <div className={`p-5 border-b ${headerBg} flex items-start justify-between gap-4`}>
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-[#1d1e2c] bg-[#0a0b14]">
           <div className="flex items-start gap-3 flex-1">
-            <div className="w-8 h-8 rounded-lg bg-blue-400/10 border border-blue-400/20 flex items-center justify-center shrink-0 mt-0.5">
+            <div className="w-8 h-8 rounded-lg bg-blue-600/10 border border-blue-500/20 flex items-center justify-center shrink-0 mt-0.5">
               <Zap className="w-4 h-4 text-blue-400" />
             </div>
             <div>
-              <h2 className={`text-base font-black uppercase tracking-tight ${textCls}`}>Select Solution Method</h2>
-              <p className={`text-xs mt-0.5 ${mutedCls}`}>
-                Choose how you want this problem solved, or let the system decide.
+              <h2 className="text-sm font-black uppercase tracking-tight text-slate-100">
+                Select Solution Method
+              </h2>
+              <p className="text-[10px] mt-0.5 text-slate-500 font-mono">
+                Choose a method — execution pauses until confirmed
               </p>
             </div>
           </div>
-          <button onClick={onCancel} className={`p-1.5 rounded-lg hover:bg-white/10 transition-colors ${mutedCls}`}>
+          <button
+            onClick={handleCancel}
+            className="p-1.5 rounded hover:bg-white/5 text-slate-600 hover:text-slate-300 transition-colors"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto">
-          {problemDescription && (
-            <div className={`p-3 rounded-xl border ${darkMode === false ? 'bg-gray-50 border-gray-200' : 'bg-white/5 border-white/5'}`}>
-              <p className={`text-[11px] font-mono ${mutedCls}`}>
-                Problem: <span className={textCls}>{problemDescription}</span>
-              </p>
-            </div>
-          )}
-
-          <div>
-            <p className={`text-[9px] font-black uppercase tracking-widest mb-3 ${labelCls}`}>Available Methods</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <AnimatePresence initial={false}>
-                {(methods || []).map((method, idx) => {
-                  const isSelected = selected === method;
-                  return (
-                    <motion.button
-                      key={method}
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: idx * 0.04 }}
-                      onClick={() => setSelected(method)}
-                      className={`relative flex items-start gap-3 p-3.5 rounded-xl text-left transition-all ${isSelected ? cardSelected : cardBase}`}
-                    >
-                      <span className="text-lg leading-none shrink-0 mt-0.5">
-                        {METHOD_ICONS[method] || '⚙️'}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-xs font-bold leading-tight ${textCls}`}>{method}</p>
-                        {METHOD_DESCRIPTIONS[method] && (
-                          <p className={`text-[10px] mt-1 leading-snug ${mutedCls}`}>{METHOD_DESCRIPTIONS[method]}</p>
-                        )}
-                      </div>
-                      {isSelected && (
-                        <CheckCircle2 className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-                      )}
-                    </motion.button>
-                  );
-                })}
-              </AnimatePresence>
+        {/* Problem description */}
+        {problemDescription && (
+          <div className="px-5 pt-4">
+            <div className={`p-3 rounded-lg border text-[11px] font-mono leading-relaxed ${domainColor}`}>
+              <span className="text-slate-500">Problem: </span>{problemDescription}
             </div>
           </div>
+        )}
+
+        {/* Methods grid */}
+        <div className="px-5 py-4 space-y-2 max-h-[50vh] overflow-y-auto">
+          <div className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-600 mb-3">
+            Available Methods
+          </div>
+          <AnimatePresence initial={false}>
+            {(methods || []).map((method, idx) => {
+              const methodId = method.id || method;
+              const methodLabel = method.label || method;
+              const methodDesc = method.desc || method.description || '';
+              const isSelected = selected?.id === methodId || selected === method;
+
+              return (
+                <motion.button
+                  key={methodId}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.03 }}
+                  onClick={() => setSelected(method)}
+                  className={`
+                    w-full flex items-start gap-3 p-3.5 rounded-lg text-left transition-all border
+                    ${isSelected
+                      ? 'border-blue-500/40 bg-blue-500/8 shadow-sm'
+                      : 'border-[#1d1e2c] bg-[#0c0d16] hover:border-[#2a2b3c] hover:bg-[#0e0f1c]'
+                    }
+                  `}
+                >
+                  {/* Index number */}
+                  <div className={`
+                    w-5 h-5 rounded shrink-0 mt-0.5 flex items-center justify-center text-[10px] font-black
+                    ${isSelected ? 'bg-blue-600 text-white' : 'bg-white/5 text-slate-600'}
+                  `}>
+                    {isSelected ? <CheckCircle2 className="w-3 h-3" /> : idx + 1}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-xs font-bold leading-tight ${isSelected ? 'text-slate-100' : 'text-slate-300'}`}>
+                      {methodLabel}
+                    </p>
+                    {methodDesc && (
+                      <p className="text-[10px] text-slate-600 mt-0.5 leading-snug font-mono">
+                        {methodDesc}
+                      </p>
+                    )}
+                  </div>
+
+                  {idx === 0 && !isSelected && (
+                    <span className="text-[9px] font-black uppercase tracking-wider text-blue-400/50 shrink-0 mt-0.5">
+                      Recommended
+                    </span>
+                  )}
+                </motion.button>
+              );
+            })}
+          </AnimatePresence>
         </div>
 
-        <div className={`p-5 border-t ${headerBg} flex gap-3`}>
-          <button onClick={onCancel} className={`px-4 py-2.5 rounded-xl font-bold text-sm uppercase tracking-wider transition-all ${cancelCls}`}>
+        {/* Footer actions */}
+        <div className="px-5 py-4 border-t border-[#1d1e2c] bg-[#0a0b14] flex gap-2">
+          <button
+            onClick={handleCancel}
+            className="px-3.5 py-2 rounded-lg font-bold text-xs uppercase tracking-wider bg-white/5 hover:bg-white/8 border border-white/8 text-slate-500 hover:text-slate-300 transition-all"
+          >
             Cancel
           </button>
           <button
-            onClick={handleAutoSelect}
-            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm uppercase tracking-wider transition-all ${darkMode === false ? 'bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-700' : 'bg-white/5 hover:bg-white/10 border border-white/10 text-white'}`}
+            onClick={handleAuto}
+            className="flex-1 flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg font-bold text-xs uppercase tracking-wider bg-white/5 hover:bg-white/8 border border-white/8 text-slate-400 hover:text-slate-200 transition-all"
           >
-            <Zap className="w-4 h-4" /> Auto Select
+            <Zap className="w-3.5 h-3.5" />
+            Auto Select
           </button>
           <button
             onClick={handleContinue}
             disabled={!selected}
-            className={`flex-1 px-4 py-2.5 rounded-xl font-bold text-sm uppercase tracking-wider transition-all ${selected ? 'bg-white text-black hover:bg-gray-100' : 'bg-white/10 text-white/30 cursor-not-allowed'}`}
+            className={`
+              flex-1 flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all
+              ${selected
+                ? 'bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-600/20'
+                : 'bg-white/5 text-slate-700 cursor-not-allowed border border-white/5'
+              }
+            `}
           >
-            Continue →
+            Solve <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
       </motion.div>

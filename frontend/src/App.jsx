@@ -8,6 +8,8 @@ import {
 import NotebookWorkspace from './components/NotebookWorkspace';
 import EngineeringInput from './components/EngineeringInput';
 import NotebookSidebar from './components/NotebookSidebar';
+import MethodPopup from './components/MethodPopup';
+import { detectDomain, getMethodsForDomain, shouldShowMethodPopup } from './lib/methodDetector';
 
 export default function App() {
   const [entries, setEntries] = useState([]);
@@ -15,8 +17,13 @@ export default function App() {
   const [inputText, setInputText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [methodPopup, setMethodPopup] = useState({
+    isOpen: false, methods: [], domain: null, problemDescription: '',
+  });
+
   const abortRef = useRef(null);
   const scrollRef = useRef(null);
+  const methodResolveRef = useRef(null);
 
   useEffect(() => {
     loadHistory();
@@ -40,18 +47,62 @@ export default function App() {
     setHistory(data.sort((a, b) => b.timestamp - a.timestamp));
   };
 
-  const upsert = (list, item) => {
-    const idx = list.findIndex(e => String(e.id) === String(item.id));
-    if (idx === -1) return [...list, item];
-    const copy = [...list];
-    copy[idx] = { ...copy[idx], ...item };
-    return copy;
+  // ── Method popup control ────────────────────────────────────────────────────
+
+  const askForMethod = (domain, query) => {
+    const methods = getMethodsForDomain(domain);
+    if (!methods.length || !shouldShowMethodPopup(domain)) {
+      return Promise.resolve(null);
+    }
+    return new Promise((resolve) => {
+      methodResolveRef.current = resolve;
+      setMethodPopup({
+        isOpen: true,
+        methods,
+        domain,
+        problemDescription: query.length > 120 ? query.slice(0, 120) + '…' : query,
+      });
+    });
   };
+
+  const handleMethodSelect = (method) => {
+    methodResolveRef.current?.(method);
+    methodResolveRef.current = null;
+    setMethodPopup(s => ({ ...s, isOpen: false }));
+  };
+
+  const handleMethodAutoSelect = () => {
+    methodResolveRef.current?.(null);
+    methodResolveRef.current = null;
+    setMethodPopup(s => ({ ...s, isOpen: false }));
+  };
+
+  const handleMethodCancel = () => {
+    methodResolveRef.current?.(false);
+    methodResolveRef.current = null;
+    setMethodPopup(s => ({ ...s, isOpen: false }));
+  };
+
+  // ── Compute ─────────────────────────────────────────────────────────────────
 
   const handleCompute = async () => {
     if (!inputText.trim() || isProcessing) return;
     const query = inputText.trim();
     setInputText('');
+
+    // Detect domain → optionally pause for method selection
+    const domain = detectDomain(query);
+    let preferredMethod = null;
+
+    if (domain) {
+      const choice = await askForMethod(domain, query);
+      if (choice === false) {
+        // User cancelled — restore input
+        setInputText(query);
+        return;
+      }
+      preferredMethod = choice; // null = auto, string = specific method id
+    }
 
     const ts = Date.now();
     const entryId = ts.toString();
@@ -66,6 +117,7 @@ export default function App() {
       final: null,
       summary: [],
       steps: [],
+      method: preferredMethod,
       isProcessing: true,
       error: null,
       timestamp: ts,
@@ -75,15 +127,18 @@ export default function App() {
     setIsProcessing(true);
     abortRef.current = new AbortController();
 
+    const supplemental = {};
+    if (preferredMethod) supplemental.method = preferredMethod;
+
     const payload = {
       type: 'text',
       input: query,
-      supplemental_params: {},
+      supplemental_params: supplemental,
       history: [],
     };
 
     try {
-      const endpoint =`${import.meta.env.VITE_BACKEND_URL}/api/compute/solve`;
+      const endpoint = `${import.meta.env.VITE_BACKEND_URL}/api/compute/solve`;
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
@@ -93,7 +148,9 @@ export default function App() {
 
       if (!response.ok || !response.body) {
         setEntries(prev => prev.map(e =>
-          e.id === entryId ? { ...e, error: 'Engine unavailable.', isProcessing: false } : e
+          e.id === entryId
+            ? { ...e, error: `Engine unavailable (HTTP ${response.status}).`, isProcessing: false }
+            : e
         ));
         setIsProcessing(false);
         return;
@@ -106,7 +163,7 @@ export default function App() {
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
-        buffer += decoder.decode(value);
+        buffer += decoder.decode(value, { stream: true });
         const parts = buffer.split('\n\n');
         buffer = parts.pop();
 
@@ -118,13 +175,16 @@ export default function App() {
           setEntries(prev => prev.map(e => {
             if (e.id !== entryId) return e;
 
-            // New rich event types
-            if (data.type === 'derivation_step' ||
-                data.type === 'equation_state' ||
-                data.type === 'section' ||
-                data.type === 'verification') {
+            // Rich structured event types
+            if (
+              data.type === 'derivation_step' ||
+              data.type === 'equation_state' ||
+              data.type === 'section' ||
+              data.type === 'verification'
+            ) {
               return { ...e, events: [...(e.events || []), data] };
             }
+
             if (data.type === 'problem_parsed') {
               return {
                 ...e,
@@ -133,9 +193,11 @@ export default function App() {
                 events: [...(e.events || []), data],
               };
             }
+
             if (data.type === 'diagram') {
               return { ...e, diagrams: [...(e.diagrams || []), data] };
             }
+
             if (data.type === 'final') {
               return {
                 ...e,
@@ -143,13 +205,24 @@ export default function App() {
                 summary: data.summary || e.summary,
               };
             }
+
             // Legacy step type
             if (data.type === 'step') {
               return { ...e, steps: [...(e.steps || []), data.content] };
             }
+
+            // Structured error from backend
             if (data.type === 'error') {
+              const msg = data.reason || data.message || 'Unknown error';
+              const stage = data.stage ? `[${data.stage}] ` : '';
+              return { ...e, error: stage + msg, isProcessing: false };
+            }
+
+            // Needs params
+            if (data.type === 'needs_parameters') {
               return { ...e, error: data.message, isProcessing: false };
             }
+
             return e;
           }));
         }
@@ -164,7 +237,7 @@ export default function App() {
           saveComputation({
             type: 'Computation',
             title: query.substring(0, 60),
-            topic: finalEntry.domain || 'Engineering',
+            topic: finalEntry.domain || domain || 'Engineering',
             input: query,
             result: finalEntry.final,
             final: finalEntry.final,
@@ -180,7 +253,9 @@ export default function App() {
     } catch (err) {
       if (err?.name === 'AbortError') return;
       setEntries(prev => prev.map(e =>
-        e.id === entryId ? { ...e, error: err.message || 'Connection error.', isProcessing: false } : e
+        e.id === entryId
+          ? { ...e, error: err.message || 'Connection error.', isProcessing: false }
+          : e
       ));
     } finally {
       setIsProcessing(false);
@@ -226,19 +301,19 @@ export default function App() {
   };
 
   const EXAMPLE_QUERIES = [
-    { label: 'Solve system', query: 'Solve: 3x + 2y = 12, x - y = 1', domain: 'Algebra' },
+    { label: 'Simultaneous equations', query: 'Solve: 3x + 2y = 12, x - y = 1', domain: 'Algebra' },
     { label: 'Beam analysis', query: 'Simply supported beam, L = 6m, UDL w = 10 kN/m', domain: 'Structural' },
     { label: 'Differentiate', query: 'Differentiate x³·sin(x) with respect to x', domain: 'Calculus' },
     { label: 'RC circuit', query: 'RC circuit: R = 2kΩ, C = 100μF, V₀ = 12V', domain: 'Circuits' },
-    { label: 'Projectile', query: 'Projectile launched at 30° with u = 40 m/s', domain: 'Mechanics' },
+    { label: 'Projectile motion', query: 'Projectile launched at 30° with u = 40 m/s', domain: 'Mechanics' },
     { label: 'Carnot engine', query: 'Carnot engine: T_H = 800K, T_C = 300K, Q_H = 5000J', domain: 'Thermo' },
   ];
 
   return (
-    <div className="min-h-screen bg-[#08080f] text-slate-200 flex flex-col font-sans">
+    <div className="h-screen bg-[#08080f] text-slate-200 flex flex-col font-sans overflow-hidden">
 
-      {/* Header */}
-      <header className="h-14 flex items-center justify-between px-6 border-b border-[#1d1e2c] bg-[#0a0a12]/90 backdrop-blur-md sticky top-0 z-50">
+      {/* Sticky header */}
+      <header className="h-14 flex items-center justify-between px-6 border-b border-[#1d1e2c] bg-[#0a0a12]/90 backdrop-blur-md z-50 shrink-0">
         <div className="flex items-center gap-3">
           <div className="flex items-center justify-center w-7 h-7 rounded bg-blue-600 text-white font-black text-xs">E</div>
           <div>
@@ -246,32 +321,23 @@ export default function App() {
             <span className="text-[11px] font-black tracking-[0.2em] uppercase text-blue-400"> Studio</span>
           </div>
           <div className="hidden sm:block h-4 w-px bg-white/10 mx-2" />
-          <span className="hidden sm:block text-[10px] text-slate-500 font-mono uppercase tracking-widest">Derivation-first computation</span>
+          <span className="hidden sm:block text-[10px] text-slate-500 font-mono uppercase tracking-widest">Derivation-first · Notebook mode</span>
         </div>
         <div className="flex items-center gap-1">
-          <button
-            onClick={clearAll}
-            className="p-2 rounded hover:bg-white/5 text-slate-500 hover:text-slate-300 transition-colors"
-            title="Clear session"
-          >
+          <button onClick={clearAll} className="p-2 rounded hover:bg-white/5 text-slate-500 hover:text-slate-300 transition-colors" title="Clear session">
             <Trash2 className="w-4 h-4" />
           </button>
-          <button
-            onClick={() => setShowHistory(!showHistory)}
-            className="p-2 rounded hover:bg-white/5 text-slate-500 hover:text-slate-300 transition-colors"
-            title="History"
-          >
+          <button onClick={() => setShowHistory(!showHistory)} className="p-2 rounded hover:bg-white/5 text-slate-500 hover:text-slate-300 transition-colors" title="History">
             <History className="w-4 h-4" />
           </button>
         </div>
       </header>
 
-      {/* Main layout */}
+      {/* Scrollable workspace */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Notebook workspace */}
-        <main className="flex-1 flex flex-col overflow-hidden">
+        <main ref={scrollRef} className="flex-1 overflow-y-auto pb-36">
           {entries.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center px-6 py-16">
+            <div className="flex flex-col items-center justify-center px-6 py-16 min-h-full">
               <div className="max-w-2xl w-full">
                 <div className="mb-10 text-center">
                   <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-blue-600/10 border border-blue-500/20 mb-5">
@@ -281,10 +347,9 @@ export default function App() {
                     Engineering Computation Studio
                   </h1>
                   <p className="text-sm text-slate-500 font-mono">
-                    Symbolic derivations · Step-by-step solutions · Publication-quality output
+                    Symbolic derivations · Step-by-step solutions · Multi-method verification
                   </p>
                 </div>
-
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-8">
                   {EXAMPLE_QUERIES.map(ex => (
                     <button
@@ -304,29 +369,11 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <div ref={scrollRef} className="flex-1 overflow-y-auto">
-              <NotebookWorkspace
-                entries={entries}
-                onDelete={deleteEntry}
-              />
-            </div>
+            <NotebookWorkspace entries={entries} onDelete={deleteEntry} />
           )}
-
-          {/* Input area */}
-          <div className="shrink-0 border-t border-[#1d1e2c] bg-[#09090f]/80 backdrop-blur-sm p-4">
-            <div className="max-w-4xl mx-auto">
-              <EngineeringInput
-                value={inputText}
-                onChange={setInputText}
-                onSubmit={handleCompute}
-                onStop={stopProcessing}
-                isProcessing={isProcessing}
-              />
-            </div>
-          </div>
         </main>
 
-        {/* Sidebar */}
+        {/* History sidebar */}
         <AnimatePresence>
           {showHistory && (
             <NotebookSidebar
@@ -339,6 +386,34 @@ export default function App() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* Fixed input bar */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-[#1d1e2c] bg-[#09090f]/96 backdrop-blur-md px-4 py-3">
+        <div className="max-w-4xl mx-auto">
+          <EngineeringInput
+            value={inputText}
+            onChange={setInputText}
+            onSubmit={handleCompute}
+            onStop={stopProcessing}
+            isProcessing={isProcessing}
+          />
+        </div>
+      </div>
+
+      {/* Method selection popup — pauses execution */}
+      <AnimatePresence>
+        {methodPopup.isOpen && (
+          <MethodPopup
+            isOpen={methodPopup.isOpen}
+            methods={methodPopup.methods}
+            domain={methodPopup.domain}
+            problemDescription={methodPopup.problemDescription}
+            onSelect={handleMethodSelect}
+            onAutoSelect={handleMethodAutoSelect}
+            onCancel={handleMethodCancel}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
