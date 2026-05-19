@@ -989,9 +989,21 @@ _FRIENDLY_ERRORS: dict[str, str] = {
     "angle":        "The angle is missing. Try adding e.g. 'at 30°' or 'theta = 45'.",
 }
 
-def _friendly_missing(missing: list[str]) -> str:
-    hints = [_FRIENDLY_ERRORS.get(p.lower(), f"'{p}' is needed but wasn't found.")
-             for p in missing]
+def _friendly_missing(missing: list) -> str:
+    def _hint(p) -> str:
+        if isinstance(p, dict):
+            label = p.get("label") or p.get("key") or str(p)
+            unit  = p.get("unit", "")
+            hint  = p.get("hint", "")
+            base  = _FRIENDLY_ERRORS.get(label.lower(), f"'{label}' is needed but wasn't found.")
+            if unit and unit not in base:
+                base = base.rstrip(".") + f" (unit: {unit})."
+            if hint:
+                base = base.rstrip(".") + f" Hint: {hint}."
+            return base
+        key = str(p)
+        return _FRIENDLY_ERRORS.get(key.lower(), f"'{key}' is needed but wasn't found.")
+    hints = [_hint(p) for p in missing]
     if len(hints) == 1:
         return f"One thing missing: {hints[0]}"
     return (
@@ -1191,29 +1203,37 @@ async def solve(request: Request):
                             yield _evt(chunk)
 
                 except asyncio.TimeoutError:
-                    yield _err(
-                        f"The **{domain}** solver took too long on this one. "
-                        "Try simplifying the problem or breaking it into smaller parts.",
-                        problem_id,
-                    )
+                    yield _evt({
+                        "type": "error",
+                        "status": "failed",
+                        "stage": "solving",
+                        "reason": (
+                            f"The {domain} solver exceeded the time limit "
+                            f"({int(SOLVE_TIMEOUT_SECONDS)}s). "
+                            "Try a simpler problem or break it into smaller parts."
+                        ),
+                        "recoverable": True,
+                        "fallback_action": "Simplify or split the problem.",
+                        "message": f"Solver timeout after {int(SOLVE_TIMEOUT_SECONDS)}s.",
+                        "problem_id": problem_id,
+                    })
                     continue
                 except Exception as exc:
                     logger.error(f"Solver error [{domain}]: {exc}", exc_info=True)
-                    yield _err(
-                        f"Something went wrong inside the **{domain}** solver: {exc}\n"
-                        "Double-check your values and try again.",
-                        problem_id,
-                    )
-                    continue
-
-                if raw_answer_parts:
-                    raw_combined = "\n\n".join(raw_answer_parts)
-                    explained = await _explain_for_student(input_summary, raw_combined)
+                    reason = str(exc)
+                    if len(reason) > 300:
+                        reason = reason[:300] + "\u2026"
                     yield _evt({
-                        "type":       "explanation",
-                        "answer":     explained,
+                        "type": "error",
+                        "status": "failed",
+                        "stage": "solving",
+                        "reason": reason,
+                        "recoverable": True,
+                        "fallback_action": "Check input values and units, then retry.",
+                        "message": reason,
                         "problem_id": problem_id,
                     })
+                    continue
 
         except Exception as exc:
             logger.error(f"Unexpected error in event_stream: {exc}", exc_info=True)

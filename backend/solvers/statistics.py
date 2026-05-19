@@ -30,9 +30,16 @@ def _parse_data(params, raw_query):
         except (TypeError, ValueError):
             pass
 
-    # Fall back to raw_query numbers
-    matches = re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", raw_query or "")
-    return np.array([float(x) for x in matches])
+    # Fall back to raw_query numbers only when the query looks like a data list
+    # (at least 3 numbers with commas or "data:" / bracket patterns nearby)
+    raw_q = raw_query or ""
+    has_bracket = "[" in raw_q or "]" in raw_q
+    has_data_keyword = re.search(r"\b(data|values?|numbers?|set|list)\b", raw_q, re.I)
+    comma_numbers = re.findall(r"\d+(?:\.\d+)?\s*,\s*\d", raw_q)
+    if has_bracket or has_data_keyword or len(comma_numbers) >= 2:
+        matches = re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", raw_q)
+        return np.array([float(x) for x in matches])
+    return np.array([])
 
 
 def _series_points(x_values, y_values):

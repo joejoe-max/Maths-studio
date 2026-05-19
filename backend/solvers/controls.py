@@ -29,10 +29,25 @@ async def solve_controls(data):
     except Exception as e:
         yield {"type": "final", "answer": f"Control System Execution Error: {str(e)}"}
 
+def _coerce_coeffs(val, default):
+    """Ensure val is a list of floats; fall back to default."""
+    if val is None:
+        return list(default)
+    if isinstance(val, str):
+        try:
+            val = [float(x.strip()) for x in val.strip("[]").split(",") if x.strip()]
+        except (ValueError, TypeError):
+            return list(default)
+    try:
+        return [float(v) for v in val]
+    except (TypeError, ValueError):
+        return list(default)
+
+
 async def solve_step_response(params):
     yield {"type": "step", "content": "Simulating system time-domain response to unit step input..."}
-    num = params.get("num", [1])
-    den = params.get("den", [1, 2, 1])
+    num = _coerce_coeffs(params.get("num"), [1])
+    den = _coerce_coeffs(params.get("den"), [1, 2, 1])
     
     # Simple numerical simulation of LTI system
     # y'' + 2y' + y = u(t)
@@ -75,8 +90,8 @@ async def solve_step_response(params):
 async def solve_transfer_function(params):
     yield {"type": "step", "content": "Computing system poles, zeros, and BIBO stability metrics..."}
     # num: [1], den: [1, 2, 1] means 1 / (s^2 + 2s + 1)
-    num = params.get("num", [1])
-    den = params.get("den", [1, 1])
+    num = _coerce_coeffs(params.get("num"), [1])
+    den = _coerce_coeffs(params.get("den"), [1, 1])
     
     poles = np.roots(den)
     zeros = np.roots(num)
