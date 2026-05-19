@@ -138,7 +138,7 @@ export default function App() {
     };
 
     try {
-      const endpoint = `/api/compute/solve`;
+      const endpoint = `${import.meta.env.VITE_BACKEND_URL}/api/compute/solve`;
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
