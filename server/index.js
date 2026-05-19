@@ -62,20 +62,6 @@ async function startServer() {
   // API Routes (rate limiter applies only to API routes)
   app.use('/api/compute', rateLimiter, computeRouter);
 
-  // Install Python Dependencies
-  try {
-    console.log('Installing Python dependencies from requirements.txt...');
-    const { execSync } = await import('child_process');
-    try {
-      execSync('pip3 install -r backend/requirements.txt', { stdio: 'inherit' });
-    } catch (e) {
-      console.log('pip3 failed, trying pip...');
-      execSync('pip install -r backend/requirements.txt', { stdio: 'inherit' });
-    }
-  } catch (err) {
-    console.error('Failed to install Python dependencies:', err);
-  }
-
   // Start Python FastAPI background process
   const startPython = (cmd) => {
     console.log(`[Server] Attempting to start Python backend with command: ${cmd}`);
@@ -112,7 +98,7 @@ async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       root: path.join(__dirname, '../frontend'),
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, allowedHosts: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);

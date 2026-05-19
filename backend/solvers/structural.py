@@ -100,19 +100,23 @@ async def solve_structural(sub: dict) -> AsyncGenerator[dict, None]:
         "content": "Using equilibrium equations..."
     }
 
+    # Position of point load P from support A (default: midspan)
+    a_P = _safe_get_float(params, "a", default=L / 2)
+    if a_P is None or a_P < 0 or a_P > L:
+        a_P = L / 2
+
     if beam_type == "simply_supported":
-        # Both ends simply supported
-        total_load = w * L + P
-        R_B = (total_load * L / 2) / L if L > 0 else 0
-        R_A = total_load - R_B
+        # Both ends simply supported — reactions depend on P position
+        R_B = (w * L**2 / 2 + P * a_P) / L if L > 0 else 0
+        R_A = w * L + P - R_B
         M_A = 0
         M_B = 0
         reactions_text = f"$R_A = {R_A:.2f}$ N\n$R_B = {R_B:.2f}$ N"
 
     elif beam_type == "cantilever":
-        # Fixed at A, free at B
+        # Fixed at A, free at B — M_A accounts for P position from free end
         R_A = w * L + P
-        M_A = (w * L**2 / 2) + (P * L)
+        M_A = (w * L**2 / 2) + P * (L - a_P)
         R_B = 0
         M_B = 0
         reactions_text = (
@@ -141,18 +145,26 @@ async def solve_structural(sub: dict) -> AsyncGenerator[dict, None]:
     # ─────────────────────────────────────────────────────────────────────────
 
     def shear_force(x):
-        if beam_type == "simply_supported":
-            return R_A - w * x
-        else:
-            return R_A - w * x
+        V = R_A - w * x
+        # Point load creates a step discontinuity at its position
+        if P > 0 and x >= a_P:
+            V -= P
+        return V
 
     def bending_moment(x):
-        if beam_type == "simply_supported":
-            return R_A * x - (w * x**2 / 2)
-        elif beam_type == "cantilever":
-            return M_A + R_A * x - (w * x**2 / 2)
+        if beam_type == "cantilever":
+            # For cantilever fixed at A, sign convention from fixed end
+            M = M_A - R_A * x + (w * x**2 / 2)
+            if P > 0 and x >= a_P:
+                M += P * (x - a_P)
+            return M
         else:
-            return M_A + R_A * x - (w * x**2 / 2)
+            M = R_A * x - (w * x**2 / 2)
+            if P > 0 and x >= a_P:
+                M -= P * (x - a_P)
+            if beam_type == "fixed":
+                M += M_A
+            return M
 
     # Calculate critical values
     x_vals = np.linspace(0, L, 1000)
@@ -262,9 +274,13 @@ async def solve_structural(sub: dict) -> AsyncGenerator[dict, None]:
         plt.close()
 
         yield {
-            "type": "step",
-            "title": "Diagrams",
-            "content": f"![Beam diagrams](data:image/png;base64,{img_base64[:80]}...)"
+            "type": "diagram",
+            "diagram_type": "plot",
+            "title": f"{beam_type.title()} Beam — Shear & Moment Diagrams",
+            "data": {
+                "image": f"data:image/png;base64,{img_base64}",
+                "caption": f"Shear force and bending moment diagrams for {beam_type} beam.",
+            },
         }
 
     except Exception as e:
