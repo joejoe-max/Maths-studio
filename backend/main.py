@@ -989,9 +989,21 @@ _FRIENDLY_ERRORS: dict[str, str] = {
     "angle":        "The angle is missing. Try adding e.g. 'at 30°' or 'theta = 45'.",
 }
 
-def _friendly_missing(missing: list[str]) -> str:
-    hints = [_FRIENDLY_ERRORS.get(p.lower(), f"'{p}' is needed but wasn't found.")
-             for p in missing]
+def _friendly_missing(missing: list) -> str:
+    def _hint(p) -> str:
+        if isinstance(p, dict):
+            label = p.get("label") or p.get("key") or str(p)
+            unit  = p.get("unit", "")
+            hint  = p.get("hint", "")
+            base  = _FRIENDLY_ERRORS.get(label.lower(), f"'{label}' is needed but wasn't found.")
+            if unit and unit not in base:
+                base = base.rstrip(".") + f" (unit: {unit})."
+            if hint:
+                base = base.rstrip(".") + f" Hint: {hint}."
+            return base
+        key = str(p)
+        return _FRIENDLY_ERRORS.get(key.lower(), f"'{key}' is needed but wasn't found.")
+    hints = [_hint(p) for p in missing]
     if len(hints) == 1:
         return f"One thing missing: {hints[0]}"
     return (

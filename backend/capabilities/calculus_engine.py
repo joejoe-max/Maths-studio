@@ -194,7 +194,8 @@ async def _differentiation(expr_str: str, sym_dict: dict, x: sp.Symbol):
     )
 
     # Critical points
-    _yield_critical_points(d1_simplified, x)
+    for evt in _yield_critical_points(d1_simplified, x):
+        yield evt
 
     yield {
         "type": "final",
@@ -294,7 +295,8 @@ async def _integration(expr_str: str, sym_dict: dict, x: sp.Symbol, params: dict
 
     # Handle definite integral
     if a_lim is not None and b_lim is not None:
-        yield from _evaluate_definite_integral(antideriv_simplified, a_lim, b_lim, expr, x)
+        async for evt in _evaluate_definite_integral(antideriv_simplified, a_lim, b_lim, expr, x):
+            yield evt
         return
 
     yield _eq_state(f"\\int {_latex(expr)}\\, d{_latex(x)} = {_latex(antideriv_simplified)} + C", "Antiderivative")
