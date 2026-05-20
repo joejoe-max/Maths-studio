@@ -185,8 +185,20 @@ app.add_middleware(SafetyMiddleware)
 def _evt(data: dict) -> str:
     return f"data: {json.dumps(data)}\n\n"
 
-def _err(message: str, problem_id: str | None = None) -> str:
-    p: dict = {"type": "error", "message": message}
+def _err(
+    message: str,
+    problem_id: str | None = None,
+    stage: str = "solving",
+    recoverable: bool = True,
+    retry_available: bool = True,
+) -> str:
+    p: dict = {
+        "type":            "error",
+        "message":         message,
+        "stage":           stage,
+        "recoverable":     recoverable,
+        "retry_available": retry_available,
+    }
     if problem_id:
         p["problem_id"] = problem_id
     return f"data: {json.dumps(p)}\n\n"
@@ -1026,9 +1038,130 @@ def _friendly_missing(missing: list) -> str:
 # HTTP endpoints
 # ──────────────────────────────────────────────────────────────────[...]
 
+# ──────────────────────────────────────────────────────────────────[...]
+# Method catalogue — single source of truth (moved from frontend)
+# ──────────────────────────────────────────────────────────────────[...]
+
+_DOMAIN_METHODS: dict[str, list[dict]] = {
+    "algebra": [
+        {"id": "elimination",  "label": "Elimination Method",       "desc": "Multiply equations to cancel a variable, then solve step by step",    "recommended": True},
+        {"id": "substitution", "label": "Substitution Method",      "desc": "Isolate one variable and substitute into remaining equations"},
+        {"id": "matrix",       "label": "Matrix Method (Gaussian)", "desc": "Form augmented matrix and row-reduce to reduced echelon form"},
+        {"id": "cramers_rule", "label": "Cramer's Rule",            "desc": "Solve using determinants of the coefficient matrix"},
+    ],
+    "calculus": [
+        {"id": "symbolic",             "label": "Symbolic (Exact)",        "desc": "Compute exact closed-form result using SymPy symbolic engine",        "recommended": True},
+        {"id": "integration_by_parts", "label": "Integration by Parts",    "desc": "∫u·dv = u·v − ∫v·du — for products of functions"},
+        {"id": "substitution_u",       "label": "u-Substitution",          "desc": "Change of variable to simplify the integrand"},
+        {"id": "partial_fractions",    "label": "Partial Fractions",       "desc": "Decompose rational functions before integrating"},
+    ],
+    "structural": [
+        {"id": "equilibrium",       "label": "Equilibrium Method",      "desc": "Apply ΣF = 0 and ΣM = 0 to find reactions and internal forces", "recommended": True},
+        {"id": "macaulay",          "label": "Macaulay's Method",       "desc": "Singularity functions for beams with multiple discontinuous loads"},
+        {"id": "direct_integration","label": "Direct Integration",      "desc": "Integrate EI·y″ = M(x) twice to get slope and deflection"},
+        {"id": "moment_area",       "label": "Moment-Area Theorems",    "desc": "Use area of M/EI diagram to compute slopes and deflections"},
+    ],
+    "mechanics": [
+        {"id": "newton",            "label": "Newton's Laws (F=ma)",    "desc": "Apply free-body diagram and second law to each body",               "recommended": True},
+        {"id": "work_energy",       "label": "Work-Energy Theorem",     "desc": "W_net = ΔKE — relates net work to change in kinetic energy"},
+        {"id": "impulse_momentum",  "label": "Impulse-Momentum",        "desc": "J = Δp — integrate force over time to find momentum change"},
+        {"id": "lagrangian",        "label": "Lagrangian Method",       "desc": "Energy-based formulation via generalized coordinates"},
+    ],
+    "circuits": [
+        {"id": "nodal",        "label": "Nodal Analysis (KCL)",  "desc": "Apply Kirchhoff's Current Law at each independent node",    "recommended": True},
+        {"id": "mesh",         "label": "Mesh Analysis (KVL)",   "desc": "Apply Kirchhoff's Voltage Law around each independent loop"},
+        {"id": "thevenin",     "label": "Thévenin Equivalent",   "desc": "Reduce network to V_th in series with R_th"},
+        {"id": "superposition","label": "Superposition Theorem", "desc": "Analyse one independent source at a time, then superpose"},
+    ],
+    "thermo": [
+        {"id": "first_law",   "label": "First Law (Energy Balance)", "desc": "Q − W = ΔU — apply to closed or open system",              "recommended": True},
+        {"id": "second_law",  "label": "Second Law (Entropy)",       "desc": "Analyse irreversibilities and entropy generation"},
+        {"id": "ideal_gas",   "label": "Ideal Gas Relations",        "desc": "Apply PV = nRT with process constraints"},
+        {"id": "carnot_cycle","label": "Carnot / Cycle Analysis",    "desc": "Compute efficiency and heat exchange for thermodynamic cycles"},
+    ],
+    "fluids": [
+        {"id": "bernoulli",   "label": "Bernoulli Equation",       "desc": "P + ½ρv² + ρgh = const along a streamline",               "recommended": True},
+        {"id": "continuity",  "label": "Continuity + Momentum",    "desc": "Mass conservation combined with momentum equation"},
+        {"id": "darcy",       "label": "Darcy-Weisbach (Pipe)",    "desc": "Head loss h_f = f·(L/D)·(v²/2g) for pipe flow"},
+    ],
+    "statistics": [
+        {"id": "descriptive", "label": "Descriptive Statistics",   "desc": "Compute mean, variance, standard deviation, and quartiles", "recommended": True},
+        {"id": "regression",  "label": "Linear Regression (OLS)",  "desc": "Fit y = mx + b using least-squares minimisation"},
+        {"id": "t_test",      "label": "t-Test (Hypothesis)",      "desc": "Test population mean using Student's t-distribution"},
+    ],
+}
+
+_POPUP_DOMAINS = {"algebra", "calculus", "structural", "mechanics", "circuits", "thermo", "fluids"}
+
+
+# ──────────────────────────────────────────────────────────────────[...]
+# HTTP endpoints
+# ──────────────────────────────────────────────────────────────────[...]
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "engineering-studio"}
+
+
+@app.post("/api/compute/analyze")
+async def analyze(request: Request):
+    """
+    Phase-1 endpoint: classify the query and return available solution methods.
+    Frontend calls this BEFORE /solve to enforce backend-owned method selection.
+
+    Returns:
+      domain          — detected engineering domain (or null)
+      problem_structure — sub-type string from L1 classifier
+      methods         — ranked list of mathematically feasible methods
+      needs_selection — true when >1 method exists and user should choose
+      auto_selected   — true when backend selects automatically
+      selected_method — pre-selected method id when auto_selected=true
+      confidence      — L1 classifier confidence [0, 1]
+    """
+    try:
+        raw_data = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+
+    user_input = raw_data.get("input", "").strip()
+    if not user_input:
+        return JSONResponse({
+            "domain": None, "problem_structure": None,
+            "methods": [], "needs_selection": False,
+            "auto_selected": True, "selected_method": None, "confidence": 0.0,
+        })
+
+    l1_result: ClassificationResult | None = None
+    try:
+        l1_result = fast_classify(user_input)
+    except Exception as exc:
+        logger.warning(f"Analyze: L1 classifier error: {exc}")
+
+    domain = None
+    if l1_result and l1_result.confidence >= 0.50:
+        domain = l1_result.domain
+
+    methods = list(_DOMAIN_METHODS.get(domain or "", []))
+
+    # Case A: single method → auto-select
+    # Case B: multiple methods + popup domain → ask user
+    # Case C/D: user-specified method handled in /solve
+    needs_selection = (
+        len(methods) > 1
+        and domain in _POPUP_DOMAINS
+    )
+    auto_selected = not needs_selection
+    selected_method = methods[0]["id"] if (methods and auto_selected) else None
+
+    return JSONResponse({
+        "domain":            domain,
+        "problem_structure": l1_result.problem_type if l1_result else None,
+        "methods":           methods,
+        "needs_selection":   needs_selection,
+        "auto_selected":     auto_selected,
+        "selected_method":   selected_method,
+        "confidence":        l1_result.confidence if l1_result else 0.0,
+    })
 
 
 @app.options("/api/compute/solve")

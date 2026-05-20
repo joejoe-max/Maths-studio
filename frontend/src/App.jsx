@@ -9,7 +9,6 @@ import NotebookWorkspace from './components/NotebookWorkspace';
 import EngineeringInput from './components/EngineeringInput';
 import NotebookSidebar from './components/NotebookSidebar';
 import MethodPopup from './components/MethodPopup';
-import { detectDomain, getMethodsForDomain, shouldShowMethodPopup } from './lib/methodDetector';
 
 export default function App() {
   const [entries, setEntries] = useState([]);
@@ -47,19 +46,32 @@ export default function App() {
     setHistory(data.sort((a, b) => b.timestamp - a.timestamp));
   };
 
-  // ── Method popup control ────────────────────────────────────────────────────
+  // ── Phase-1 analysis: backend classifies and returns feasible methods ───────
 
-  const askForMethod = (domain, query) => {
-    const methods = getMethodsForDomain(domain);
-    if (!methods.length || !shouldShowMethodPopup(domain)) {
-      return Promise.resolve(null);
+  const analyzeQuery = async (query) => {
+    try {
+      const res = await fetch('/api/compute/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: query }),
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  };
+
+  const askForMethod = (analysis, query) => {
+    if (!analysis?.needs_selection || !analysis.methods?.length) {
+      return Promise.resolve(analysis?.selected_method ?? null);
     }
     return new Promise((resolve) => {
       methodResolveRef.current = resolve;
       setMethodPopup({
         isOpen: true,
-        methods,
-        domain,
+        methods: analysis.methods,
+        domain: analysis.domain,
         problemDescription: query.length > 120 ? query.slice(0, 120) + '…' : query,
       });
     });
@@ -89,20 +101,24 @@ export default function App() {
     if (!inputText.trim() || isProcessing) return;
     const query = inputText.trim();
     setInputText('');
+    await handleComputeQuery(query);
+  };
 
-    // Detect domain → optionally pause for method selection
-    const domain = detectDomain(query);
+  const handleComputeQuery = async (query) => {
+    if (!query?.trim() || isProcessing) return;
+
+    // Phase 1: ask backend to classify and return feasible methods
+    const analysis = await analyzeQuery(query);
+    const domain = analysis?.domain ?? null;
     let preferredMethod = null;
 
-    if (domain) {
-      const choice = await askForMethod(domain, query);
-      if (choice === false) {
-        // User cancelled — restore input
-        setInputText(query);
-        return;
-      }
-      preferredMethod = choice; // null = auto, string = specific method id
+    const choice = await askForMethod(analysis, query);
+    if (choice === false) {
+      // User cancelled — restore input
+      setInputText(query);
+      return;
     }
+    preferredMethod = choice; // null = auto-select, string = specific method id
 
     const ts = Date.now();
     const entryId = ts.toString();
@@ -213,14 +229,18 @@ export default function App() {
 
             // Structured error from backend
             if (data.type === 'error') {
-              const msg = data.reason || data.message || 'Unknown error';
-              const stage = data.stage ? `[${data.stage}] ` : '';
-              return { ...e, error: stage + msg, isProcessing: false };
+              const msg = data.message || data.reason || 'Unknown error';
+              return {
+                ...e,
+                error: msg,
+                retry_available: data.retry_available !== false,
+                isProcessing: false,
+              };
             }
 
-            // Needs params
+            // Needs params (always retryable)
             if (data.type === 'needs_parameters') {
-              return { ...e, error: data.message, isProcessing: false };
+              return { ...e, error: data.message, retry_available: true, isProcessing: false };
             }
 
             return e;
@@ -254,12 +274,23 @@ export default function App() {
       if (err?.name === 'AbortError') return;
       setEntries(prev => prev.map(e =>
         e.id === entryId
-          ? { ...e, error: err.message || 'Connection error.', isProcessing: false }
+          ? { ...e, error: err.message || 'Connection error.', retry_available: true, isProcessing: false }
           : e
       ));
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  // ── Retry: remove the failed entry and re-submit its query ──────────────────
+
+  const handleRetry = (entryId) => {
+    const entry = entries.find(e => String(e.id) === String(entryId));
+    if (!entry || isProcessing) return;
+    const query = entry.query;
+    setEntries(prev => prev.filter(e => String(e.id) !== String(entryId)));
+    // flush removal first, then re-run
+    setTimeout(() => handleComputeQuery(query), 10);
   };
 
   const stopProcessing = () => {
@@ -369,7 +400,7 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <NotebookWorkspace entries={entries} onDelete={deleteEntry} />
+            <NotebookWorkspace entries={entries} onDelete={deleteEntry} onRetry={handleRetry} />
           )}
         </main>
 

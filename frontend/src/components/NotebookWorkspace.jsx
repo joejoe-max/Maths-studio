@@ -1,7 +1,7 @@
 import React from 'react';
 import NotebookEntry from './NotebookEntry';
 
-export default function NotebookWorkspace({ entries, onDelete }) {
+export default function NotebookWorkspace({ entries, onDelete, onRetry }) {
   return (
     <div className="max-w-4xl mx-auto w-full px-4 pt-8 pb-4 space-y-10">
       {entries.map((entry, idx) => (
@@ -10,6 +10,7 @@ export default function NotebookWorkspace({ entries, onDelete }) {
           entry={entry}
           index={idx}
           onDelete={() => onDelete(entry.id)}
+          onRetry={() => onRetry(entry.id)}
         />
       ))}
     </div>

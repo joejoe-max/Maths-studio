@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Trash2, AlertCircle, CheckCircle2, XCircle, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Trash2, AlertCircle, CheckCircle2, XCircle, Loader2, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
@@ -226,23 +226,36 @@ function LegacySteps({ steps }) {
   );
 }
 
-function ErrorBlock({ error }) {
+function ErrorBlock({ error, retryAvailable, onRetry }) {
   if (!error) return null;
   return (
-    <div className="flex items-start gap-2.5 p-3 rounded-lg bg-red-500/5 border border-red-500/20">
-      <XCircle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
-      <div>
-        <div className="text-[9px] font-black uppercase tracking-widest text-red-400 mb-1">Error</div>
-        <span className="text-xs text-red-300/80 leading-relaxed">{error}</span>
+    <div className="rounded-lg bg-red-500/5 border border-red-500/20 overflow-hidden">
+      <div className="flex items-start gap-2.5 p-3">
+        <XCircle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <div className="text-[9px] font-black uppercase tracking-widest text-red-400 mb-1">Error</div>
+          <span className="text-xs text-red-300/80 leading-relaxed">{error}</span>
+        </div>
       </div>
+      {retryAvailable !== false && onRetry && (
+        <div className="border-t border-red-500/10 px-3 py-2">
+          <button
+            onClick={onRetry}
+            className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400/70 hover:text-red-300 transition-colors"
+          >
+            <RotateCcw className="w-3 h-3" />
+            Retry query
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
 // ── Main component ──────────────────────────────────────────────────────────
 
-export default function NotebookEntry({ entry, index, onDelete }) {
-  const { query, domain, events, diagrams, final, summary, steps, method, isProcessing, error } = entry;
+export default function NotebookEntry({ entry, index, onDelete, onRetry }) {
+  const { query, domain, events, diagrams, final, summary, steps, method, isProcessing, error, retry_available } = entry;
 
   const renderPipeline = () => {
     const elements = [];
@@ -365,7 +378,7 @@ export default function NotebookEntry({ entry, index, onDelete }) {
           )}
 
           {/* Error block */}
-          {error && <ErrorBlock error={error} />}
+          {error && <ErrorBlock error={error} retryAvailable={retry_available} onRetry={onRetry} />}
 
           {/* Structured render pipeline */}
           {renderPipeline()}
