@@ -58,7 +58,7 @@ function PlotlyChart({ data, layout, title }) {
           <span className="text-[9px] font-black uppercase tracking-[0.25em] text-slate-600">{title}</span>
         </div>
       )}
-      <div ref={ref} style={{ height: 220, width: '100%' }} />
+      <div ref={ref} style={{ height: 'clamp(160px, 40vw, 240px)', width: '100%' }} />
     </div>
   );
 }

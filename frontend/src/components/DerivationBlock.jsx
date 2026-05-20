@@ -52,7 +52,7 @@ export default function DerivationBlock({ step }) {
       className="my-3 rounded-lg border border-[#1d1e2c] bg-[#0c0d16] overflow-hidden"
     >
       {/* Operation label header */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-[#1d1e2c] bg-[#0a0b14]">
+      <div className="flex items-center gap-2 px-3 sm:px-4 py-2 border-b border-[#1d1e2c] bg-[#0a0b14]">
         <div className="w-1.5 h-1.5 rounded-full bg-blue-500/60" />
         <span className="text-[10px] font-black uppercase tracking-widest text-blue-400/70">
           {displayLabel}
@@ -60,7 +60,7 @@ export default function DerivationBlock({ step }) {
       </div>
 
       {/* Before → After equations */}
-      <div className="p-4">
+      <div className="p-3 sm:p-4">
         {from_latex && (
           <div className="mb-3">
             <div className="text-[9px] font-mono uppercase tracking-widest text-slate-700 mb-1.5">Before</div>

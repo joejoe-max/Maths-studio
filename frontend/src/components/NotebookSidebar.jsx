@@ -14,12 +14,21 @@ function timeAgo(ts) {
 
 export default function NotebookSidebar({ history, onLoad, onClose, deleteHistoryItem, onRefresh }) {
   return (
+    <>
+      {/* Mobile backdrop */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-black/60 z-30 sm:hidden"
+        onClick={onClose}
+      />
     <motion.div
       initial={{ x: 320, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: 320, opacity: 0 }}
       transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-      className="w-72 border-l border-[#1d1e2c] bg-[#09090f] flex flex-col shrink-0"
+      className="fixed inset-y-0 right-0 w-full sm:w-72 sm:relative sm:inset-auto border-l border-[#1d1e2c] bg-[#09090f] flex flex-col z-40 sm:z-auto shrink-0"
     >
       <div className="flex items-center justify-between p-4 border-b border-[#1d1e2c]">
         <span className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">
@@ -77,5 +86,6 @@ export default function NotebookSidebar({ history, onLoad, onClose, deleteHistor
         )}
       </div>
     </motion.div>
+    </>
   );
 }

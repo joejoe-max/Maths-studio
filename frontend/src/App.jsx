@@ -313,21 +313,21 @@ export default function App() {
     <div className="h-screen bg-[#08080f] text-slate-200 flex flex-col font-sans overflow-hidden">
 
       {/* Sticky header */}
-      <header className="h-14 flex items-center justify-between px-6 border-b border-[#1d1e2c] bg-[#0a0a12]/90 backdrop-blur-md z-50 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-7 h-7 rounded bg-blue-600 text-white font-black text-xs">E</div>
-          <div>
+      <header className="h-14 flex items-center justify-between px-3 sm:px-6 border-b border-[#1d1e2c] bg-[#0a0a12]/90 backdrop-blur-md z-50 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="flex items-center justify-center w-7 h-7 rounded bg-blue-600 text-white font-black text-xs shrink-0">E</div>
+          <div className="min-w-0">
             <span className="text-[11px] font-black tracking-[0.2em] uppercase text-slate-100">Engineering</span>
             <span className="text-[11px] font-black tracking-[0.2em] uppercase text-blue-400"> Studio</span>
           </div>
-          <div className="hidden sm:block h-4 w-px bg-white/10 mx-2" />
-          <span className="hidden sm:block text-[10px] text-slate-500 font-mono uppercase tracking-widest">Derivation-first · Notebook mode</span>
+          <div className="hidden md:block h-4 w-px bg-white/10 mx-2 shrink-0" />
+          <span className="hidden md:block text-[10px] text-slate-500 font-mono uppercase tracking-widest truncate">Derivation-first · Notebook mode</span>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 shrink-0">
           <button onClick={clearAll} className="p-2 rounded hover:bg-white/5 text-slate-500 hover:text-slate-300 transition-colors" title="Clear session">
             <Trash2 className="w-4 h-4" />
           </button>
-          <button onClick={() => setShowHistory(!showHistory)} className="p-2 rounded hover:bg-white/5 text-slate-500 hover:text-slate-300 transition-colors" title="History">
+          <button onClick={() => setShowHistory(!showHistory)} className={`p-2 rounded hover:bg-white/5 transition-colors ${showHistory ? 'text-blue-400' : 'text-slate-500 hover:text-slate-300'}`} title="History">
             <History className="w-4 h-4" />
           </button>
         </div>
@@ -335,32 +335,32 @@ export default function App() {
 
       {/* Scrollable workspace */}
       <div className="flex flex-1 overflow-hidden">
-        <main ref={scrollRef} className="flex-1 overflow-y-auto pb-36">
+        <main ref={scrollRef} className="flex-1 overflow-y-auto pb-40 sm:pb-36">
           {entries.length === 0 ? (
-            <div className="flex flex-col items-center justify-center px-6 py-16 min-h-full">
+            <div className="flex flex-col items-center justify-center px-4 sm:px-6 py-10 sm:py-16 min-h-full">
               <div className="max-w-2xl w-full">
-                <div className="mb-10 text-center">
-                  <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-blue-600/10 border border-blue-500/20 mb-5">
-                    <span className="text-2xl font-black text-blue-400">∑</span>
+                <div className="mb-8 sm:mb-10 text-center">
+                  <div className="inline-flex items-center justify-center w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-blue-600/10 border border-blue-500/20 mb-4 sm:mb-5">
+                    <span className="text-xl sm:text-2xl font-black text-blue-400">∑</span>
                   </div>
-                  <h1 className="text-2xl font-black tracking-tight text-slate-100 mb-2">
+                  <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-100 mb-2">
                     Engineering Computation Studio
                   </h1>
-                  <p className="text-sm text-slate-500 font-mono">
+                  <p className="text-xs sm:text-sm text-slate-500 font-mono leading-relaxed px-2">
                     Symbolic derivations · Step-by-step solutions · Multi-method verification
                   </p>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-8">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3 mb-8">
                   {EXAMPLE_QUERIES.map(ex => (
                     <button
                       key={ex.label}
                       onClick={() => setInputText(ex.query)}
-                      className="text-left p-3.5 rounded-lg bg-[#0f101a] border border-[#1d1e2c] hover:border-blue-500/40 hover:bg-[#111222] transition-all group"
+                      className="text-left p-3 sm:p-3.5 rounded-lg bg-[#0f101a] border border-[#1d1e2c] hover:border-blue-500/40 hover:bg-[#111222] active:bg-[#111222] transition-all group"
                     >
-                      <div className="text-[9px] font-black uppercase tracking-widest text-blue-400/60 mb-1.5 group-hover:text-blue-400 transition-colors">
+                      <div className="text-[9px] font-black uppercase tracking-widest text-blue-400/60 mb-1 sm:mb-1.5 group-hover:text-blue-400 transition-colors">
                         {ex.domain}
                       </div>
-                      <div className="text-xs text-slate-400 group-hover:text-slate-200 transition-colors leading-relaxed">
+                      <div className="text-[11px] sm:text-xs text-slate-400 group-hover:text-slate-200 transition-colors leading-relaxed">
                         {ex.label}
                       </div>
                     </button>
@@ -388,7 +388,7 @@ export default function App() {
       </div>
 
       {/* Fixed input bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-[#1d1e2c] bg-[#09090f]/96 backdrop-blur-md px-4 py-3">
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-[#1d1e2c] bg-[#09090f]/96 backdrop-blur-md px-3 sm:px-4 py-3 safe-area-inset-bottom">
         <div className="max-w-4xl mx-auto">
           <EngineeringInput
             value={inputText}

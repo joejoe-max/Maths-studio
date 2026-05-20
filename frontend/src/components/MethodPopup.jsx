@@ -144,25 +144,25 @@ export default function MethodPopup({
         </div>
 
         {/* Footer actions */}
-        <div className="px-5 py-4 border-t border-[#1d1e2c] bg-[#0a0b14] flex gap-2">
+        <div className="px-4 sm:px-5 py-3 sm:py-4 border-t border-[#1d1e2c] bg-[#0a0b14] flex flex-wrap gap-2">
           <button
             onClick={handleCancel}
-            className="px-3.5 py-2 rounded-lg font-bold text-xs uppercase tracking-wider bg-white/5 hover:bg-white/8 border border-white/8 text-slate-500 hover:text-slate-300 transition-all"
+            className="w-full sm:w-auto px-3.5 py-2.5 sm:py-2 rounded-lg font-bold text-xs uppercase tracking-wider bg-white/5 hover:bg-white/10 border border-white/8 text-slate-500 hover:text-slate-300 transition-all"
           >
             Cancel
           </button>
           <button
             onClick={handleAuto}
-            className="flex-1 flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg font-bold text-xs uppercase tracking-wider bg-white/5 hover:bg-white/8 border border-white/8 text-slate-400 hover:text-slate-200 transition-all"
+            className="flex-1 flex items-center justify-center gap-1.5 px-3.5 py-2.5 sm:py-2 rounded-lg font-bold text-xs uppercase tracking-wider bg-white/5 hover:bg-white/10 border border-white/8 text-slate-400 hover:text-slate-200 transition-all"
           >
             <Zap className="w-3.5 h-3.5" />
-            Auto Select
+            <span className="hidden xs:inline">Auto </span>Select
           </button>
           <button
             onClick={handleContinue}
             disabled={!selected}
             className={`
-              flex-1 flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all
+              flex-1 flex items-center justify-center gap-1.5 px-3.5 py-2.5 sm:py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all
               ${selected
                 ? 'bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-600/20'
                 : 'bg-white/5 text-slate-700 cursor-not-allowed border border-white/5'
