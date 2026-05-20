@@ -407,6 +407,9 @@ async def _gemini_call(
             parts=[types.Part.from_text(text=user_message)],
         ))
 
+    if gemini_client is None:
+        raise RuntimeError("Gemini client not configured — provide GEMINI_API_KEY to enable AI routing.")
+
     last_err = "Unknown error"
     for model in GEMINI_MODELS:
         try:
