@@ -1,0 +1,213 @@
+You are a senior AI systems architect and computational engineering engine designer.
+
+Your task is to REDESIGN the entire problem interpretation + solving mechanism of an engineering computation platform.
+
+This system converts:
+Natural language engineering questions → structured mathematical problems → symbolic solving → step-by-step derivations.
+
+You must ensure:
+- high accuracy
+- deterministic behavior
+- strict separation of frontend and backend responsibilities
+- no ambiguity in solver execution
+- no silent failures
+
+==================================================
+CORE GOAL
+==================================================
+
+Design a system that:
+
+1. Extracts mathematical meaning from natural language engineering questions
+2. Converts it into a structured symbolic representation
+3. Selects valid solving methods based ONLY on feasibility
+4. Solves accurately using symbolic computation
+5. Streams step-by-step derivation
+6. Handles errors gracefully with user-friendly responses
+
+==================================================
+CRITICAL ARCHITECTURE RULES
+==================================================
+
+FRONTEND MUST NOT:
+- detect math structure
+- choose methods
+- validate equations
+- interpret engineering meaning
+- decide solver behavior
+
+FRONTEND ONLY:
+- sends raw user input
+- displays backend method options
+- renders solution steps
+- shows errors and retry UI
+
+==================================================
+BACKEND RESPONSIBILITIES
+==================================================
+
+Backend must handle ALL intelligence:
+
+1. Natural Language Understanding
+   - extract variables, constraints, units
+   - detect engineering domain (mechanics, circuits, thermo, algebra, etc.)
+   - identify known quantities and unknowns
+
+2. Mathematical Translation Layer
+   Convert text into:
+   - structured equations
+   - symbolic expressions
+   - constraints
+   - boundary conditions
+
+3. Method Engine (CRITICAL)
+   Based on the extracted structure:
+   - determine all mathematically valid solving methods
+   - remove invalid or impossible methods
+   - rank remaining methods by efficiency and clarity
+
+IMPORTANT:
+Only return methods that are mathematically feasible.
+
+==================================================
+METHOD SELECTION RULES
+==================================================
+
+Case A: Single valid method
+- return ONLY that method
+- do NOT prompt user for choice
+
+Case B: Multiple valid methods
+- return all feasible methods
+- allow user to select one
+
+Case C: User specifies method in question
+- automatically apply it
+- do NOT ask user again
+
+Case D: User-specified method is invalid
+- return:
+  "The selected method is not feasible for this problem type."
+
+BUT:
+- still return valid alternative methods
+
+==================================================
+METHOD OUTPUT FORMAT
+==================================================
+
+Backend returns:
+
+{
+  "domain": "...",
+  "problem_structure": "...",
+  "methods": [
+    {
+      "id": "equilibrium",
+      "label": "ΣF = 0, ΣM = 0",
+      "recommended": true
+    }
+  ],
+  "auto_selected": true | false,
+  "selected_method": "..."
+}
+
+==================================================
+SOLVER ENGINE RULES
+==================================================
+
+- Use symbolic computation only (no early numeric approximation)
+- Do NOT mix data types (strings, tuples, symbolic expressions)
+- Validate equations before solving
+- Detect missing variables BEFORE execution
+- If incomplete input → request clarification, DO NOT guess
+
+==================================================
+ERROR HANDLING SYSTEM
+==================================================
+
+Never expose raw system errors to users.
+
+Backend must convert errors into:
+
+{
+  "type": "error",
+  "message": "Friendly explanation of the issue",
+  "stage": "parsing | routing | solving | ai | network",
+  "recoverable": true,
+  "retry_available": true
+}
+
+Frontend must:
+- show friendly message
+- show retry button
+- retry resubmits original query
+
+DO NOT show:
+- stack traces
+- HTTP errors
+- model failures
+- raw exceptions
+
+==================================================
+NL → MATH TRANSLATION RULE
+==================================================
+
+All user inputs must be transformed into:
+
+- symbolic variables
+- equations
+- constraints
+- known/unknown classification
+
+Example:
+"Beam 6m with 10kN load at midpoint"
+
+→
+
+{
+  "type": "beam_problem",
+  "length": 6,
+  "loads": [{"type": "point", "value": 10, "position": 3}],
+  "unknowns": ["reaction_A", "reaction_B"]
+}
+
+==================================================
+STABILITY REQUIREMENTS
+==================================================
+
+System must:
+- never crash silently
+- never guess missing physics parameters
+- never mis-route solver
+- never allow frontend to influence math logic
+- never return invalid methods
+
+==================================================
+FINAL TARGET BEHAVIOR
+==================================================
+
+The system should behave like:
+
+- Wolfram Alpha (interpretation)
+- MATLAB (computation)
+- Mathcad (engineering workflow)
+
+NOT like a chatbot.
+
+==================================================
+DELIVERABLE
+==================================================
+
+Provide:
+
+1. Full redesigned architecture
+2. NL → Math conversion engine design
+3. Method selection engine design
+4. Solver pipeline design
+5. Error handling system
+6. Frontend/backend responsibility split
+7. Example flows (algebra, beam, circuit)
+8. Failure case handling strategy
+
+Focus on correctness, determinism, and engineering-grade reliability.
