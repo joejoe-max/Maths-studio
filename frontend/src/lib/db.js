@@ -58,7 +58,7 @@ const sanitizeForStorage = (value) => {
     }
 
     // Other objects (e.g., instances) -> try to reduce to plain data if possible, else drop.
-    // This avoids circular structures leaking into IDB.
+    // This avoids circular structures leaking into IDB .
     return undefined;
   };
 
