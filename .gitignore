@@ -1,0 +1,22 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Python virtual environments
+.venv_backend/
+.venv/
+backend/.venv/
+*.venv/
+
+# Frontend build output (if present)
+frontend/dist/
+backend/dist/
+__pycache__/
+*.pyc
+__pycache__/
+*.pyc

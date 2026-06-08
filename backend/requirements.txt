@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+pydantic
+python-multipart
+python-dotenv
+numpy
+scipy
+sympy
+google-genai
+pandas
+openpyxl
+matplotlib
+plotly
+scikit-learn
+pypdf

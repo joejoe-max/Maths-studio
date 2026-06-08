@@ -1,0 +1,672 @@
+import re
+import sympy as sp
+from sympy.parsing.sympy_parser import (
+    parse_expr,
+    standard_transformations,
+    implicit_multiplication_application,
+    convert_xor,
+)
+try:
+    from engine.math_normalizer import normalize_math_text
+except ModuleNotFoundError:  # Package import path used by tests/tools.
+    from .math_normalizer import normalize_math_text
+
+MATH_TRANSFORMATIONS = standard_transformations + (
+    implicit_multiplication_application,
+    convert_xor,
+)
+
+def clean_math_string(s):
+    """
+    Strips common natural language words often left by LLM or user.
+    Handles lists by joining with semi-colons.
+    """
+    if s is None: return ""
+    
+    if isinstance(s, list):
+        # Join with a distinct separator
+        s = " ; ".join(str(item) for item in s)
+    
+    # Common prefixes to strip - expanded to catch common LLM boilerplate
+    prefixes = [
+        r"solve (the )?(linear |quadratic )?equation",
+        r"calculate (the )?",
+        r"find (the )?",
+        r"evaluate (the )?",
+        r"determine (the )?",
+        r"compute (the )?",
+        r"differentiate (the )?",
+        r"integrate (the )?",
+        r"plot (the )?",
+        r"what is (the )?",
+        r"result in",
+        r"equation(s?)[:\s]*",
+        r"expression(s?)[:\s]*",
+        r"solution(s?)[:\s]*",
+        r"result(s?)[:\s]*",
+        r"answer(s?)[:\s]*",
+        r"ans[:\s]*",
+        r"symbolic solution[:\s]*",
+        r"step-by-step solution[:\s]*",
+    ]
+    
+    clean = normalize_math_text(str(s).strip())
+    # Remove surrounding quotes or backticks if model added them
+    if (clean.startswith("'") and clean.endswith("'")) or (clean.startswith('"') and clean.endswith('"')) or (clean.startswith('`') and clean.endswith('`')):
+        clean = clean[1:-1]
+        
+    for p in prefixes:
+        # Use word boundaries and ignore case
+        p_pattern = r"^\s*" + p
+        clean = re.sub(p_pattern, "", clean, flags=re.IGNORECASE).strip()
+        
+    # Remove common boilerplate at the end
+    clean = re.split(r"\s+and\s+solve", clean, flags=re.IGNORECASE)[0]
+    clean = re.split(r"\s+and\s+plot", clean, flags=re.IGNORECASE)[0]
+    
+    # If "y = f(x) from x=... to x=..."
+    # We want to stop at "from"
+    if " from " in clean.lower():
+        clean = re.split(r"\s+from\s+", clean, flags=re.IGNORECASE)[0].strip()
+        
+    return normalize_math_text(clean.strip())
+
+def safe_sympify(expr_str, symbols=None):
+    """
+    Wraps sp.sympify with robust cleaning.
+    """
+    clean = clean_math_string(expr_str)
+    locals_dict = dict(symbols or {})
+
+    # Detect variable names and add to locals if not present
+    for name in set(re.findall(r"[A-Za-z_]\w*", clean)):
+        if name not in locals_dict:
+            locals_dict[name] = sp.Symbol(name)
+
+    try:
+        parsed = parse_expr(clean, local_dict=locals_dict, transformations=MATH_TRANSFORMATIONS, evaluate=True)
+        return parsed
+    except Exception:
+        # Fallback to standard sympify
+        try:
+            return sp.sympify(clean, locals=locals_dict)
+        except Exception:
+            # Last ditch effort: if it's a list or similar, just return as is or error
+            return sp.sympify(clean)
+
+def simplify_math(expr):
+    """
+    Symbolically simplifies an expression using SymPy.
+    """
+    if expr is None: return None
+    try:
+        if isinstance(expr, str):
+            expr = safe_sympify(expr)
+        return sp.simplify(expr)
+    except Exception:
+        return expr
+
+def detect_variables(expr):
+    """
+    Returns a list of free symbols in an expression.
+    Falls back to regex extraction if SymPy parsing yields no free symbols.
+    """
+    if expr is None:
+        return []
+
+    try:
+        if isinstance(expr, str):
+            parsed = safe_sympify(expr)
+        else:
+            parsed = expr
+
+        free = sorted([s.name for s in getattr(parsed, "free_symbols", set())])
+        if free:
+            return free
+    except Exception:
+        # Continue to regex fallback below
+        pass
+
+    # Regex fallback: extract likely symbol names from the raw expression text.
+    if isinstance(expr, str):
+        text = clean_math_string(expr)
+    else:
+        text = str(expr)
+
+    # Common words/functions to ignore in variable extraction
+    ignore = {
+        "sin","cos","tan","cot","sec","csc",
+        "ln","log","exp","sqrt","pi","E",
+        "and","or","not",
+        "solve","find","calculate","determine",
+        "from","to"
+    }
+
+    # Special handling: if it's an equation/system, split around '=' and extract from both sides.
+    if "=" in text:
+        sides = []
+        for part in text.split("="):
+            if part.strip():
+                sides.append(part)
+        text = " ".join(sides)
+
+    # Grab tokens that look like identifiers (letters/underscore start, alnum/underscore continue)
+    tokens = re.findall(r"[A-Za-z_]\w*", text)
+    candidates = [t for t in tokens if t not in ignore]
+
+    # Preserve order as they appear (then unique)
+    seen = set()
+    out = []
+    for t in candidates:
+        # Exclude numeric-like tokens early
+        if re.fullmatch(r"\d+(\.\d+)?", t):
+            continue
+        if t in seen:
+            continue
+        seen.add(t)
+        out.append(t)
+
+    return out
+
+def validate_physical_params(params, constraints=None):
+    """
+    Checks parameters against physical constraints (e.g. mass > 0).
+    Returns (is_valid, error_msg)
+    """
+    if not params: return True, None
+    
+    # Standard physical constraints
+    standard_constraints = {
+        "m": {"min": 0, "label": "Mass"},
+        "mass": {"min": 0, "label": "Mass"},
+        "L": {"min": 0, "label": "Length"},
+        "l": {"min": 0, "label": "Length"},
+        "k": {"min": 0, "label": "Stiffness"},
+        "T": {"min": 0, "label": "Absolute Temperature", "unit": "K"}, # Assume K if not specified? 
+        "rho": {"min": 0, "label": "Density"},
+    }
+    
+    # Merge with custom constraints
+    if constraints:
+        standard_constraints.update(constraints)
+        
+    for key, val in params.items():
+        if key in standard_constraints:
+            limit = standard_constraints[key]
+            try:
+                numeric_val = float(val)
+                if "min" in limit and numeric_val < limit["min"]:
+                    return False, f"{limit['label']} ({key}) cannot be less than {limit['min']}{limit.get('unit', '')}."
+                if "max" in limit and numeric_val > limit["max"]:
+                    return False, f"{limit['label']} ({key}) exceeds physical limit of {limit['max']}{limit.get('unit', '')}."
+            except (ValueError, TypeError):
+                continue
+                
+    return True, None
+
+def normalize_params(params):
+    """
+    Normalizes common physics/engineering parameter names to standard keys.
+    """
+    if not params: return {}
+    
+    # Map of lowercase synonyms to standard keys
+    mapping = {
+        "initial velocity": "u",
+        "initial_velocity": "u",
+        "v1": "u",
+        "final velocity": "v",
+        "final_velocity": "v",
+        "v2": "v",
+        "acceleration": "a",
+        "time": "t",
+        "displacement": "s",
+        "distance": "s",
+        "mass": "m",
+        "force": "F",
+        "point load": "P",
+        "point_load": "P",
+        "distributed load": "w",
+        "distributed_load": "w",
+        "vertical load": "P",
+        "gravity": "g",
+        "length": "L",
+        "width": "w",
+        "height": "h",
+        "depth": "d",
+        "diameter": "D",
+        "radius": "r",
+        "density": "rho",
+        "pressure": "P",
+        "temperature": "T",
+        "volume": "V",
+        "energy": "E",
+        "work": "W",
+        "power": "P_out",
+        "stiffness": "k",
+        "spring constant": "k",
+        "angle": "theta",
+        "theta": "theta",
+        "frequency": "f",
+        "period": "T_period",
+        "angular velocity": "omega",
+        "torque": "tau",
+    }
+    
+    normalized = {}
+    for k, v in params.items():
+        # Preserve original
+        normalized[k] = v
+        
+        k_clean = k.lower().replace("_", " ")
+        if k_clean in mapping:
+            normalized[mapping[k_clean]] = v
+            
+    return normalized
+
+
+STANDARD_DEFAULTS = {
+    "g": 9.81,
+    "rho": 1000.0,
+    "n1": 1.0,
+    "n2": 1.5,
+    "f": 50.0,
+    "E": 200e9,
+    "I": 1e-4,
+}
+
+
+def _to_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def apply_standard_defaults(params):
+    enriched = dict(params or {})
+    for key, value in STANDARD_DEFAULTS.items():
+        if enriched.get(key) in (None, ""):
+            enriched[key] = value
+    return enriched
+
+
+def merge_params(*param_sets):
+    merged = {}
+    for param_set in param_sets:
+        if not param_set:
+            continue
+        for key, value in param_set.items():
+            if value not in (None, ""):
+                merged[key] = value
+    return normalize_params(merged)
+
+
+def find_missing_params(domain, problem_type, params, raw_query=""):
+    lowered_query = (raw_query or "").lower()
+    lowered_type = (problem_type or "").lower()
+    lowered_domain = (domain or "").lower()
+    normalized = apply_standard_defaults(normalize_params(params or {}))
+
+    def require(spec):
+        missing = []
+        for item in spec:
+            key = item["key"]
+            aliases = item.get("aliases", [])
+            found = normalized.get(key)
+            if found in (None, ""):
+                for alias in aliases:
+                    if normalized.get(alias) not in (None, ""):
+                        found = normalized.get(alias)
+                        break
+            if found in (None, ""):
+                missing.append(item)
+        return missing
+
+    if lowered_domain == "mechanics" and ("projectile" in lowered_type or "projectile" in lowered_query):
+        return require([
+            {"key": "v0", "aliases": ["velocity"], "label": "Initial velocity", "unit": "m/s", "hint": "Example: 20"},
+            {"key": "theta", "aliases": ["angle"], "label": "Launch angle", "unit": "deg", "hint": "Example: 45"},
+        ])
+
+    if lowered_domain == "mechanics" and ("kinematics" in lowered_type or "motion" in lowered_query):
+        known = sum(1 for key in ["u", "v", "a", "t", "s"] if normalized.get(key) not in (None, ""))
+        if known < 3:
+            return [
+                {"key": "u", "label": "Initial velocity", "unit": "m/s", "hint": "Any 3 of u, v, a, t, s are enough."},
+                {"key": "v", "label": "Final velocity", "unit": "m/s"},
+                {"key": "a", "label": "Acceleration", "unit": "m/s²"},
+                {"key": "t", "label": "Time", "unit": "s"},
+                {"key": "s", "label": "Displacement", "unit": "m"},
+            ]
+
+    if lowered_domain == "circuits" and ("ohm" in lowered_query or "resistance" in lowered_query or "ohms_law" in lowered_type):
+        known = sum(1 for key in ["v", "i", "r"] if normalized.get(key) not in (None, ""))
+        if known < 2:
+            return [
+                {"key": "v", "label": "Voltage", "unit": "V", "hint": "Provide any 2 of V, I, R."},
+                {"key": "i", "label": "Current", "unit": "A"},
+                {"key": "r", "label": "Resistance", "unit": "Ohm"},
+            ]
+
+    if lowered_domain == "fluids" and ("continuity" in lowered_query or "continuity" in lowered_type):
+        known = sum(1 for key in ["v1", "v2", "a1", "a2"] if normalized.get(key) not in (None, ""))
+        if known < 3:
+            return [
+                {"key": "v1", "label": "Inlet velocity", "unit": "m/s"},
+                {"key": "v2", "label": "Outlet velocity", "unit": "m/s"},
+                {"key": "a1", "label": "Inlet area", "unit": "m²"},
+                {"key": "a2", "label": "Outlet area", "unit": "m²"},
+            ]
+
+    if lowered_domain == "structural" and any(keyword in lowered_type or keyword in lowered_query for keyword in ["beam", "deflection", "shear", "moment"]):
+        # Check if we need both types for the specific superimposed case
+        if "point load" in lowered_query and "distributed load" in lowered_query:
+            return require([
+                {"key": "L", "aliases": ["l"], "label": "Beam length", "unit": "m", "hint": "Total span length."},
+                {"key": "P", "aliases": ["concentrated_load"], "label": "Point Load Magnitude", "unit": "N"},
+                {"key": "w", "aliases": ["udl"], "label": "Uniformly Distributed Load", "unit": "N/m"},
+            ])
+        return require([
+            {"key": "L", "aliases": ["l"], "label": "Beam length", "unit": "m", "hint": "Total span length."},
+        ])
+
+    if lowered_domain == "statistics":
+        raw_numbers = re.findall(r"[-+]?\d*\.\d+|\d+", lowered_query)
+        values = normalized.get("data", [])
+        if not values and len(raw_numbers) < 2:
+            return [
+                {"key": "data", "label": "Dataset", "unit": "comma-separated", "hint": "Example: 12, 15, 18, 20"},
+            ]
+
+    if (lowered_domain == "thermo" and ("gas law" in lowered_query or "ideal gas" in lowered_query)):
+        known = sum(1 for key in ["p", "v", "n", "t"] if normalized.get(key) not in (None, ""))
+        if known < 3:
+            return [
+                {"key": "p", "label": "Pressure", "unit": "Pa", "hint": "Provide any 3 of P, V, n, T."},
+                {"key": "v", "label": "Volume", "unit": "m³"},
+                {"key": "n", "label": "Moles", "unit": "mol"},
+                {"key": "t", "label": "Temperature", "unit": "K"},
+            ]
+
+    if "sine" in lowered_query or "cosine" in lowered_query or "tangent" in lowered_query:
+        # Check if we have an expression or variable
+        if not normalized.get("expression") and not re.search(r"[a-z]", raw_query):
+            return [
+                {"key": "expression", "label": "Mathematical Expression", "hint": "Example: sin(x)"}
+            ]
+
+    if "factor" in lowered_query:
+        # If no expression found in query
+        if not normalized.get("expression") and not re.search(r"[a-z]", raw_query):
+             return [
+                {"key": "expression", "label": "Expression to factor", "hint": "Example: x^2 + 5x + 6"}
+            ]
+        # Always allow method selection if factorization is keyword
+        return [
+            {
+                "key": "factor_method", 
+                "label": "Factorization Method", 
+                "hint": "Optional: grouping, quadratic formula, standard",
+                "options": ["standard", "grouping", "quadratic formula", "difference of squares"]
+            }
+        ]
+
+    return []
+
+
+def parse_user_supplied_value(raw_value):
+    if isinstance(raw_value, (int, float, list, dict)):
+        return raw_value
+    if raw_value is None:
+        return None
+
+    text = str(raw_value).strip()
+    if not text:
+        return None
+
+    if "," in text and not any(ch in text for ch in "[]{}"):
+        numbers = [segment.strip() for segment in text.split(",") if segment.strip()]
+        parsed_numbers = [_to_float(item) for item in numbers]
+        if all(item is not None for item in parsed_numbers):
+            return parsed_numbers
+
+    numeric_value = _to_float(text)
+    if numeric_value is not None:
+        return numeric_value
+
+    return text
+
+
+def parse_numeric_list(value):
+    if value is None:
+        return []
+    if isinstance(value, list):
+        parsed = []
+        for item in value:
+            maybe = _to_float(item)
+            if maybe is not None:
+                parsed.append(maybe)
+        return parsed
+
+    text = str(value).strip()
+    if not text:
+        return []
+
+    numbers = re.findall(r"[-+]?\d*\.?\d+", text)
+    return [_to_float(n) for n in numbers if _to_float(n) is not None]
+
+
+def resolve_numeric_expressions(params):
+    resolved = dict(params or {})
+
+    def looks_numeric_expression(value):
+        if not isinstance(value, str):
+            return False
+        text = value.strip()
+        if not text or len(text) > 80:
+            return False
+        if re.search(r"[=,]", text):
+            return False
+        if re.search(r"[+\-*/^()]", text) or re.search(r"\d", text):
+            return True
+        return False
+
+    numeric_locals = {}
+    for key, value in resolved.items():
+        try:
+            numeric_locals[key] = float(value)
+        except (TypeError, ValueError):
+            continue
+
+    def transform(value):
+        if isinstance(value, dict):
+            return {inner_key: transform(inner_value) for inner_key, inner_value in value.items()}
+        if isinstance(value, list):
+            return [transform(item) for item in value]
+        if not looks_numeric_expression(value):
+            return value
+        try:
+            expr = safe_sympify(value, symbols=numeric_locals)
+            if getattr(expr, "free_symbols", None) and expr.free_symbols:
+                return value
+            return float(expr)
+        except Exception:
+            return value
+
+    for key, value in list(resolved.items()):
+        new_value = transform(value)
+        resolved[key] = new_value
+        try:
+            numeric_locals[key] = float(new_value)
+        except (TypeError, ValueError):
+            continue
+
+    return resolved
+
+
+def propagate_uncertainty(expr, params, uncertainties):
+    """
+    Performs first-order uncertainty propagation using SymPy.
+    expr: sympy expression or string
+    params: dict of parameter values {name: value}
+    uncertainties: dict of absolute uncertainties {name: sigma}
+    """
+    if not uncertainties:
+        return 0.0
+    
+    expr_sym = safe_sympify(expr)
+    if isinstance(expr_sym, str): return 0.0
+    
+    symbols = {s.name: s for s in expr_sym.free_symbols}
+    variance = 0.0
+    
+    for var_name, sigma in uncertainties.items():
+        if var_name in symbols:
+            s_var = symbols[var_name]
+            diff_f = sp.diff(expr_sym, s_var)
+            # Evaluate derivative at nominal values
+            try:
+                deriv_val = float(diff_f.subs(params))
+                variance += (deriv_val * float(sigma))**2
+            except Exception:
+                continue
+                
+    return float(sp.sqrt(variance))
+
+def detect_matrix(s):
+    """
+    Heuristic to detect if a string represents a matrix.
+    e.g. [[1,2],[3,4]] or [1 2; 3 4]
+    """
+    if not isinstance(s, str): return False
+    s = s.strip()
+    if s.startswith("[") and s.endswith("]"):
+        return True
+    if ";" in s and re.search(r"\d", s):
+        return True
+    return False
+
+def parse_matrix(s):
+    """
+    Parses a string into a SymPy Matrix.
+    """
+    try:
+        # Standardize format: replace ; with newline or comma nests
+        clean = s.strip()
+        if ";" in clean and not clean.startswith("[["):
+            # Format: [1 2; 3 4] -> [[1,2],[3,4]]
+            rows = clean.strip("[]").split(";")
+            nested = []
+            for r in rows:
+                nested.append([float(x) for x in re.findall(r"[-+]?\d*\.\d+|\d+", r)])
+            return sp.Matrix(nested)
+        
+        # Try to eval as literal first if it looks like python list
+        if clean.startswith("[["):
+            import ast
+            return sp.Matrix(ast.literal_eval(clean))
+            
+        return sp.Matrix(sp.sympify(clean))
+    except Exception:
+        return None
+
+def format_uncertainty_report(result_val, uncertainty, unit=""):
+    """
+    Returns a formatted markdown string for uncertainty.
+    """
+    if uncertainty <= 0:
+        return f"{result_val:.4f} {unit}"
+    
+    # Calculate relative error
+    rel_error = (uncertainty / abs(result_val) * 100) if result_val != 0 else 0
+    
+    return f"{result_val:.4f} ± {uncertainty:.4f} {unit} ({rel_error:.2f}%)"
+
+def append_uncertainty_to_final(steps, result_name, nominal_val, sigma, unit=""):
+    """
+    Appends a structured uncertainty block to the solution steps.
+    """
+    steps.append("\n#### Uncertainty Analysis")
+    steps.append(f"- **Nominal {result_name}:** {nominal_val:.6f} {unit}")
+    steps.append(f"- **Absolute Uncertainty ($\\sigma$):** {sigma:.6f} {unit}")
+    if nominal_val != 0:
+        steps.append(f"- **Relative Error:** {(sigma/abs(nominal_val)*100):.3f}%")
+    steps.append(f"- **Final Result:** ${nominal_val:.4f} \\pm {sigma:.4f}$ {unit}")
+    return steps
+
+def polish_final_answer(answer, domain="", problem_type=""):
+    text = (answer or "").strip()
+    if not text:
+        return text
+
+    if "###" not in text:
+        heading = "### Solution"
+        if domain:
+            heading = f"### {domain.replace('_', ' ').title()} Solution"
+        text = f"{heading}\n{text}"
+
+    text = polish_display_math(text)
+    text = text.replace("\n- **", "\n- **").replace("\n\n\n", "\n\n")
+    return text.strip()
+
+
+def polish_display_math(text: str) -> str:
+    """Convert internal/Python math syntax into UI-friendly math text.
+
+    Solvers and symbolic tools naturally use machine forms such as `**`,
+    `sqrt(...)`, and `*`. This boundary formatter keeps computation internal
+    while presenting conventional notation in markdown/KaTeX-capable UI paths.
+    """
+    value = str(text or "")
+    if not value:
+        return value
+
+    protected: list[str] = []
+
+    def protect(match: re.Match) -> str:
+        protected.append(match.group(0))
+        return f"§MD{len(protected) - 1}§"
+
+    value = re.sub(r"\*\*[^*]+\*\*", protect, value)
+    value = _replace_sqrt_calls(value)
+    value = _replace_function_calls(value)
+    value = re.sub(r"\*\*\s*\(?\s*([-+]?[A-Za-z0-9.]+)\s*\)?", r"^\1", value)
+    value = re.sub(r"(?<=\w)\s*\*\s*(?=\w)", " ", value)
+    value = re.sub(r"(?<=\d)\s*\*\s*(?=[A-Za-z(])", " ", value)
+    for index, markdown in enumerate(protected):
+        value = value.replace(f"§MD{index}§", markdown)
+    return value
+
+
+def _replace_sqrt_calls(text: str) -> str:
+    pattern = re.compile(r"sqrt\s*\(")
+    value = text
+    while True:
+        match = pattern.search(value)
+        if not match:
+            return value
+        close = _find_matching_paren(value, match.end() - 1)
+        if close < 0:
+            return value
+        inner = value[match.end():close]
+        replacement = f"√({polish_display_math(inner)})"
+        value = value[:match.start()] + replacement + value[close + 1:]
+
+
+def _replace_function_calls(text: str) -> str:
+    names = "sin|cos|tan|log|ln|exp"
+    return re.sub(rf"\b({names})\s*\(([^()]+)\)", lambda m: f"{m.group(1)}({polish_display_math(m.group(2))})", text)
+
+
+def _find_matching_paren(text: str, open_index: int) -> int:
+    depth = 0
+    for index in range(open_index, len(text)):
+        char = text[index]
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return index
+    return -1
