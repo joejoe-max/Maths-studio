@@ -15,7 +15,7 @@ if BACKEND not in sys.path:
 os.environ.setdefault("MAX_CONCURRENT_SOLVES", "6")
 
 from fastapi.testclient import TestClient
-from main import app, MAX_CONCURRENT_SOLVES, _normalize_routing_shape, _rate_limit_client_ip
+from main import app, MAX_CONCURRENT_SOLVES, _normalize_routing_shape, _rate_limit_client_ip, _semantic_route_text
 
 
 class ApiSmokeTests(unittest.TestCase):
@@ -80,6 +80,15 @@ class ApiSmokeTests(unittest.TestCase):
         )
         with patch("main.TRUSTED_PROXY_IPS", {"10.0.0.5"}):
             self.assertEqual(_rate_limit_client_ip(request), "10.0.0.5")
+
+    def test_semantic_route_reports_deterministic_fallback_without_gemini(self):
+        import asyncio
+
+        with patch("main.gemini_client", None):
+            routing = asyncio.run(_semantic_route_text(
+                "A simply supported beam spans 6 m and carries 10 kN/m. Find reactions."
+            ))
+        self.assertEqual(routing["semantic_route_source"], "deterministic_fallback")
 
 if __name__ == "__main__":
     unittest.main()
