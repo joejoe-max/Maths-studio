@@ -39,6 +39,26 @@ def _number(value: Any) -> float | None:
         return None
 
 
+_UNIT_TO_SI = {
+    "m": 1.0, "mm": 1e-3, "cm": 1e-2, "km": 1e3,
+    "n": 1.0, "kn": 1e3, "mn": 1e6,
+    "n/m": 1.0, "kn/m": 1e3,
+    "pa": 1.0, "kpa": 1e3, "mpa": 1e6, "gpa": 1e9,
+    "n*m": 1.0, "kn*m": 1e3, "kn·m": 1e3,
+    "m^2": 1.0, "mm^2": 1e-6, "m^3": 1.0, "mm^3": 1e-9,
+    "m^4": 1.0, "mm^4": 1e-12,
+}
+
+
+def _canonical_quantity_value(quantity: dict[str, Any]) -> tuple[float | None, str]:
+    value = _number(quantity.get("value"))
+    unit = str(quantity.get("unit") or "").strip().lower().replace(" ", "")
+    unit = unit.replace("⋅", "*")
+    scale = _UNIT_TO_SI.get(unit)
+    if value is not None and scale is not None:
+        return value * scale, "si"
+    return value, unit
+
 def _extract_actual(prompt: str, routing: dict[str, Any]) -> dict[str, Any]:
     """Run the same routing-to-SubProblemSpec pipeline used by the app."""
     spec = build_problem_spec(prompt, routing)
@@ -169,7 +189,7 @@ def run_benchmark(cases: list[dict[str, Any]], predictions: dict[str, dict[str, 
         for member in members:
             model = member["actual"].get("model") or {}
             quantities = sorted(
-                (_norm(q.get("name")), _number(q.get("value")), _norm(q.get("unit")))
+                (_norm(q.get("name")), *_canonical_quantity_value(q))
                 for q in model.get("quantities", []) if isinstance(q, dict)
             )
             entity_types = sorted(_norm(e.get("type")) for e in model.get("entities", []) if isinstance(e, dict))
