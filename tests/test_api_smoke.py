@@ -15,7 +15,7 @@ if BACKEND not in sys.path:
 os.environ.setdefault("MAX_CONCURRENT_SOLVES", "6")
 
 from fastapi.testclient import TestClient
-from main import app, MAX_CONCURRENT_SOLVES, _normalize_routing_shape, _rate_limit_client_ip, _semantic_route_text
+from main import app, MAX_CONCURRENT_SOLVES, _normalize_routing_shape, _rate_limit_client_ip, _semantic_route_text, _parse_gemini_json
 
 
 class ApiSmokeTests(unittest.TestCase):
@@ -89,6 +89,10 @@ class ApiSmokeTests(unittest.TestCase):
                 "A simply supported beam spans 6 m and carries 10 kN/m. Find reactions."
             ))
         self.assertEqual(routing["semantic_route_source"], "deterministic_fallback")
+
+    def test_invalid_gemini_json_is_marked_as_parser_fallback(self):
+        parsed = _parse_gemini_json("This is not JSON", fallback_domain="unknown")
+        self.assertTrue(parsed.get("_parse_fallback"))
 
 if __name__ == "__main__":
     unittest.main()
