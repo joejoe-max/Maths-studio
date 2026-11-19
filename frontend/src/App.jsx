@@ -270,8 +270,7 @@ export default function App() {
       if (interruption?.type === 'method') {
         const methods = interruption.payload?.methods || [];
         const recommended = methods.find(method => method.recommended && method.feasible !== false)
-          || methods.find(method => method.feasible !== false)
-          || methods[0];
+          || (methods.length === 1 && methods[0].feasible !== false ? methods[0] : null);
         if (!recommended?.id) {
           setEntries(prev => prev.map(e =>
             e.id === entryId
@@ -471,20 +470,6 @@ export default function App() {
           />
         </div>
       </div>
-
-      <AnimatePresence>
-        {methodPopup.isOpen && (
-          <MethodPopup
-            isOpen={methodPopup.isOpen}
-            methods={methodPopup.methods}
-            domain={methodPopup.domain}
-            problemDescription={methodPopup.problemDescription}
-            onSelect={handleMethodSelect}
-            onAutoSelect={handleMethodAutoSelect}
-            onCancel={handleMethodCancel}
-          />
-        )}
-      </AnimatePresence>
 
       <AnimatePresence>
         {inputPopup.isOpen && (
