@@ -35,3 +35,14 @@ The evaluator runs outputs through `build_problem_spec`, the app's routing-to-`S
 ## Important limitation
 
 This is an evaluation harness, not proof that the LLM understands all natural language. CI can test the evaluator and its failure detection without an API key; a real understanding score requires fresh router outputs from the configured model. The gold set is an initial, reviewable sample, not a cap on language coverage. Add new cases when failures reveal a new physical distinction or ambiguity.
+
+
+## Live evaluation against Gemini
+
+The regular CI tests validate the harness and the deterministic application pipeline; they do not claim to evaluate an LLM. To measure actual model understanding, configure `GEMINI_API_KEY` (or `AI_INTEGRATIONS_GEMINI_API_KEY`) and run:
+
+```bash
+python tests/run_live_engineering_benchmark.py
+```
+
+This sends each prompt sequentially through the same `_semantic_route_text` function used by the app, saves the raw routing responses to JSONL, and writes a scored report. A provider failure may cause the production router to fall back to deterministic parsing; inspect backend logs and the saved responses before treating a low score as a model-only failure. Keep benchmark reports and model/version details with release evidence. Do not put API keys in the repository.
