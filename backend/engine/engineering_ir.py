@@ -10,7 +10,7 @@ from typing import Any
 
 ENGINEERING_DOMAINS = {"structural", "mechanics", "fluids", "thermo", "circuits", "physics", "controls"}
 _UNIT_DIMENSIONS = {
-    "m":"length","mm":"length","cm":"length","km":"length","m^2":"area","m2":"area",
+    "m":"length","mm":"length","cm":"length","km":"length","m^2":"area","m2":"area","m^4":"second_moment_of_area","mm^4":"second_moment_of_area","mm4":"second_moment_of_area",
     "mm^2":"area","mm2":"area","m^3":"volume","m3":"volume","l":"volume",
     "n":"force","kn":"force","mn":"force","n/m":"force_per_length","kn/m":"force_per_length",
     "pa":"pressure","kpa":"pressure","mpa":"pressure","gpa":"pressure","n/m^2":"pressure",
