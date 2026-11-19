@@ -202,6 +202,50 @@ class EngineeringAdapterTests(unittest.TestCase):
         self.assertAlmostEqual(summary["R_B"], 5_000.0, delta=0.1)
         self.assertAlmostEqual(summary["M_max"], 15_000.0, delta=0.1)
 
+    def test_equivalent_support_representations_produce_same_beam_result(self):
+        base_parameters = {"L": 6.0, "P": 10_000.0, "a": 3.0, "E": 200e9, "I": 8e-5}
+        representations = [
+            {
+                "boundary_conditions": [
+                    {"location": "left", "condition": "pinned"},
+                    {"location": "right", "condition": "roller"},
+                ],
+                "entities": [{"id": "beam_1", "type": "beam"}],
+            },
+            {
+                "entities": [
+                    {"id": "beam_1", "type": "beam"},
+                    {"id": "support_a", "type": "pin support"},
+                    {"id": "support_b", "type": "roller support"},
+                ],
+                "relationships": [
+                    {"type": "supported_by", "source": "beam_1", "target": "support_a"},
+                    {"type": "supported_by", "source": "beam_1", "target": "support_b"},
+                ],
+            },
+        ]
+        results = []
+        for model in representations:
+            prepared, error = prepare_engineering_solver_input({
+                "domain": "structural",
+                "problem_type": "beam_analysis",
+                "raw_query": "A beam carries a central point load.",
+                "parameters": dict(base_parameters),
+                "engineering_model": model,
+            })
+            self.assertIsNone(error)
+
+            async def run():
+                return [event async for event in solve_beam(prepared)]
+
+            events = asyncio.run(run())
+            final = next(event for event in events if event.get("type") == "final")
+            summary = {item["label"]: float(item["value"]) for item in final["summary"]}
+            results.append((summary["R_A"], summary["R_B"], summary["M_max"]))
+
+        for actual, expected in zip(results[1], results[0]):
+            self.assertAlmostEqual(actual, expected, delta=0.1)
+
     def test_adapted_column_input_reaches_euler_solver(self):
         data = {
             "domain": "structural",
