@@ -345,7 +345,7 @@ alongside the fields above. This is a solver-independent physical representation
 not another wording classification. Populate it from the meaning of the complete
 statement, not from phrase matching. Use this shape:
 {
-  "entities": [{"id":"beam_1","type":"beam","attributes":{}}],
+  "entities": [{"id":"beam_1","type":"beam","attributes":{}}, {"id":"support_left","type":"support","attributes":{}}],
   "quantities": [{
     "name":"L","value":6.0,"unit":"m","dimension":"length",
     "role":"known","object":"beam_1","location":null,"direction":null,
