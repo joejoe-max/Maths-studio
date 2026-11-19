@@ -53,16 +53,18 @@ def _support_facts(model: dict[str, Any]) -> set[str]:
 
 def _has_simply_supported_condition(model: dict[str, Any]) -> bool:
     facts = " ".join(
-        _flatten_values(model.get(key, []))
+        item
         for key in ("boundary_conditions", "relationships", "entities")
+        for item in _flatten_values(model.get(key, []))
     )
     return "simply supported" in facts or ("pin" in _support_facts(model) and "roller" in _support_facts(model))
 
 
 def _has_cantilever_condition(model: dict[str, Any]) -> bool:
     facts = " ".join(
-        _flatten_values(model.get(key, []))
+        item
         for key in ("boundary_conditions", "relationships", "entities")
+        for item in _flatten_values(model.get(key, []))
     )
     return "cantilever" in facts or ("fixed" in _support_facts(model) and "free" in _support_facts(model))
 
