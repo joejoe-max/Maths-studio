@@ -70,6 +70,19 @@ def build_engineering_model(raw_query: str, sub: dict[str, Any], parameters: dic
             errors.append(f'{q["name"]} must be greater than zero; verify the extracted value.')
         if q["unit"] and not q["dimension"]:
             warnings.append(f'Unit "{q["unit"]}" for {q["name"]} is unrecognised; preserved without conversion.')
+    entity_ids = {str(entity.get("id")) for entity in model["entities"] if isinstance(entity, dict) and entity.get("id")}
+    for relationship in model["relationships"]:
+        if not isinstance(relationship, dict):
+            warnings.append("A physical relationship was not represented as an object.")
+            continue
+        for endpoint in ("source", "target"):
+            ref = relationship.get(endpoint)
+            if ref and entity_ids and str(ref) not in entity_ids:
+                errors.append(f'Relationship {relationship.get("type", "unknown")} refers to missing entity "{ref}".')
+        left_dimension = relationship.get("left_dimension") or relationship.get("lhs_dimension")
+        right_dimension = relationship.get("right_dimension") or relationship.get("rhs_dimension")
+        if left_dimension and right_dimension and left_dimension != right_dimension:
+            errors.append(f'Relationship {relationship.get("type", "unknown")} compares incompatible dimensions: {left_dimension} and {right_dimension}.')
     if not model["entities"]: warnings.append("No physical entities were explicitly supplied by semantic extraction.")
     if not model["relationships"]: warnings.append("No explicit physical relationships were supplied; solver compatibility requires review.")
     if model["ambiguities"]: warnings.append("The statement contains unresolved ambiguities.")
