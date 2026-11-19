@@ -66,10 +66,17 @@ def build_engineering_model(raw_query: str, sub: dict[str, Any], parameters: dic
     }
     errors, warnings = [], []
     for q in quantities:
-        if q["name"].lower() in _POSITIVE_KEYS and isinstance(q["value"],(int,float)) and q["value"] <= 0:
+        value = q["value"]
+        if isinstance(value, (int, float)) and not math.isfinite(float(value)):
+            errors.append(f'{q["name"]} must be a finite number.')
+        if q["name"].lower() in _POSITIVE_KEYS and isinstance(value,(int,float)) and value <= 0:
             errors.append(f'{q["name"]} must be greater than zero; verify the extracted value.')
-        if q["unit"] and not q["dimension"]:
+        mapped_dimension = _dimension(q["unit"])
+        declared_dimension = q["dimension"]
+        if q["unit"] and not mapped_dimension:
             warnings.append(f'Unit "{q["unit"]}" for {q["name"]} is unrecognised; preserved without conversion.')
+        elif mapped_dimension and declared_dimension and mapped_dimension != declared_dimension:
+            errors.append(f'{q["name"]} declares dimension "{declared_dimension}" but unit "{q["unit"]}" represents "{mapped_dimension}".')
     entity_ids = {str(entity.get("id")) for entity in model["entities"] if isinstance(entity, dict) and entity.get("id")}
     for relationship in model["relationships"]:
         if not isinstance(relationship, dict):
