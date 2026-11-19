@@ -341,8 +341,7 @@ Return ONLY valid JSON in this shape:
   ]
 }
 
-For engineering-domain sub-problems, ALSO return an "engineering_model" object
-alongside the fields above. This is a solver-independent physical representation,
+For EACH engineering-domain sub-problem, place an "engineering_model" object INSIDE that sub-problem object, alongside its parameters and units. Do NOT place it at the response root. This is a solver-independent physical representation,
 not another wording classification. Populate it from the meaning of the complete
 statement, not from phrase matching. Use this shape:
 {
@@ -989,12 +988,17 @@ def _normalize_routing_shape(data: dict, fallback_domain: str) -> dict:
             "input_summary": data.get("input_summary", ""),
             "parameters":    data.get("parameters", {}),
             "confidence":    data.get("confidence", 0.80),
+            "engineering_model": data.get("engineering_model", {}),
         }]}
 
     subs = data["sub_problems"]
     if not isinstance(subs, list):
         subs = [subs] if isinstance(subs, dict) else []
     data["sub_problems"] = [s for s in subs if isinstance(s, dict) and s]
+    # Accept a root-level model from older/loose model responses only when
+    # there is exactly one sub-problem; never smear one model across many tasks.
+    if len(data["sub_problems"]) == 1 and isinstance(data.get("engineering_model"), dict):
+        data["sub_problems"][0].setdefault("engineering_model", data["engineering_model"])
     return data
 
 
