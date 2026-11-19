@@ -347,5 +347,56 @@ class EngineeringAdapterTests(unittest.TestCase):
         self.assertEqual(prepared["parameters"]["K"], 1.0)
 
 
+    def test_negated_beam_support_does_not_authorize_solver(self):
+        data = beam_payload(
+            boundary_conditions=[{"condition": "not simply supported; one end is fixed"}],
+        )
+        _, error = prepare_engineering_solver_input(data)
+        self.assertIsNotNone(error)
+        self.assertIn("support conditions", error.lower())
+
+    def test_negated_column_restraint_does_not_derive_effective_length_factor(self):
+        data = {
+            "domain": "structural",
+            "problem_type": "euler_column_buckling",
+            "parameters": {"L": 3, "E": 200e9, "I": 8e-6},
+            "engineering_model": {
+                "boundary_conditions": [
+                    {"location": "top", "condition": "not pinned"},
+                    {"location": "bottom", "condition": "pinned"},
+                ],
+            },
+        }
+        _, error = prepare_engineering_solver_input(data)
+        self.assertIsNotNone(error)
+        self.assertIn("effective length factor", error.lower())
+
+    def test_negated_closed_end_condition_is_rejected(self):
+        data = {
+            "domain": "structural",
+            "problem_type": "thin_pressure_vessel",
+            "parameters": {"p": 2e6, "R": 0.5, "t_wall": 0.005},
+            "engineering_model": {
+                "entities": [{"type": "cylindrical pressure vessel"}],
+                "boundary_conditions": [{"condition": "ends are not closed"}],
+            },
+        }
+        _, error = prepare_engineering_solver_input(data)
+        self.assertIsNotNone(error)
+        self.assertIn("closed ends", error.lower())
+
+    def test_negated_solid_section_is_not_treated_as_solid_shaft(self):
+        data = {
+            "domain": "structural",
+            "problem_type": "shaft_torsion",
+            "parameters": {"T": 2000, "L": 1.2, "G": 80e9, "d": 0.05},
+            "engineering_model": {
+                "entities": [{"type": "not a solid circular shaft"}],
+            },
+        }
+        _, error = prepare_engineering_solver_input(data)
+        self.assertIsNotNone(error)
+        self.assertIn("solid or hollow", error.lower())
+
 if __name__ == "__main__":
     unittest.main()
