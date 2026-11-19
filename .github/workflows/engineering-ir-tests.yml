@@ -1,4 +1,5 @@
 name: Engineering semantic model tests
+# Keep focused parser, IR and solver-adapter regressions running on every PR update.
 
 on:
   pull_request:
