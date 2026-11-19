@@ -71,7 +71,7 @@ def _has_cantilever_condition(model: dict[str, Any]) -> bool:
 
 _SI_UNIT_SCALES = {
     "m": 1.0, "mm": 1e-3, "cm": 1e-2,
-    "n": 1.0, "kn": 1e3,
+    "n": 1.0, "kn": 1e3, "n*m": 1.0, "kn*m": 1e3,
     "n/m": 1.0, "kn/m": 1e3,
     "pa": 1.0, "kpa": 1e3, "mpa": 1e6, "gpa": 1e9,
     "m^4": 1.0, "m4": 1.0, "mm^4": 1e-12, "mm4": 1e-12,
@@ -116,6 +116,51 @@ def prepare_engineering_solver_input(data: dict[str, Any]) -> tuple[dict[str, An
     model = prepared.get("engineering_model")
     if domain not in {"structural", "advanced_structural"}:
         prepared["parameters_in_si"] = True
+    elif problem_type == "shaft_torsion":
+        _set_if_missing(params, "T", _quantity_value(model, {"t", "torque"}))
+        _set_if_missing(params, "L", _quantity_value(model, {"l", "length"}))
+        _set_if_missing(params, "G", _quantity_value(model, {"g", "shear_modulus"}))
+        _set_if_missing(params, "d", _quantity_value(model, {"d", "diameter", "outer_diameter"}))
+        _set_if_missing(params, "d_inner", _quantity_value(model, {"d_inner", "inner_diameter"}))
+        facts = " ".join(
+            item
+            for key in ("entities", "relationships", "boundary_conditions")
+            for item in _flatten_values(model.get(key, []))
+        )
+        if "hollow" in facts and _number(params.get("d_inner")) is None:
+            return prepared, "A hollow shaft requires its inner diameter."
+        if "solid" not in facts and "hollow" not in facts:
+            return prepared, "Specify whether the shaft has a solid or hollow circular cross-section."
+        for key in ("T", "L", "G", "d"):
+            value = _number(params.get(key))
+            if value is None or value <= 0:
+                return prepared, f"Shaft torsion requires an explicit positive {key} value."
+        inner = _number(params.get("d_inner"))
+        if inner is not None and (inner < 0 or inner >= _number(params["d"])):
+            return prepared, "The shaft inner diameter must be nonnegative and smaller than its outer diameter."
+        if "solid" in facts and inner is None:
+            params["d_inner"] = 0.0
+
+    elif problem_type == "thin_pressure_vessel":
+        _set_if_missing(params, "p", _quantity_value(model, {"p", "pressure", "internal_pressure"}))
+        _set_if_missing(params, "R", _quantity_value(model, {"r", "radius", "internal_radius"}))
+        _set_if_missing(params, "t_wall", _quantity_value(model, {"t", "t_wall", "wall_thickness", "thickness"}))
+        facts = " ".join(
+            item
+            for key in ("entities", "relationships", "boundary_conditions")
+            for item in _flatten_values(model.get(key, []))
+        )
+        if "cylinder" not in facts and "cylindrical" not in facts:
+            return prepared, "The current pressure-vessel solver supports cylindrical vessels only."
+        if "closed end" not in facts and "closed-end" not in facts:
+            return prepared, "State whether the cylindrical pressure vessel has closed ends before calculating longitudinal stress."
+        for key in ("p", "R", "t_wall"):
+            value = _number(params.get(key))
+            if value is None or value <= 0:
+                return prepared, f"Pressure-vessel analysis requires an explicit positive {key} value."
+        if _number(params["R"]) / _number(params["t_wall"]) < 10:
+            return prepared, "The thin-wall assumption is not satisfied (R/t must be at least 10 for this solver)."
+
     return prepared, None
     if not isinstance(model, dict):
         return prepared, "The engineering interpretation is missing; the solver cannot verify the physical setup."
