@@ -119,6 +119,68 @@ class EngineeringAdapterTests(unittest.TestCase):
         self.assertIsNotNone(error)
         self.assertIn("span", error.lower())
 
+    def test_shaft_torsion_adapter_requires_section_and_converts_units(self):
+        data = {
+            "domain": "structural",
+            "problem_type": "shaft_torsion",
+            "parameters": {},
+            "engineering_model": {
+                "entities": [{"id": "shaft_1", "type": "solid circular shaft"}],
+                "quantities": [
+                    {"name": "T", "value": 2, "unit": "kN*m"},
+                    {"name": "L", "value": 1200, "unit": "mm"},
+                    {"name": "G", "value": 80, "unit": "GPa"},
+                    {"name": "d", "value": 50, "unit": "mm"},
+                ],
+            },
+        }
+        prepared, error = prepare_engineering_solver_input(data)
+        self.assertIsNone(error)
+        self.assertAlmostEqual(prepared["parameters"]["T"], 2000)
+        self.assertAlmostEqual(prepared["parameters"]["L"], 1.2)
+        self.assertAlmostEqual(prepared["parameters"]["G"], 80e9)
+        self.assertAlmostEqual(prepared["parameters"]["d"], 0.05)
+        self.assertEqual(prepared["parameters"]["d_inner"], 0.0)
+
+    def test_hollow_shaft_requires_inner_diameter(self):
+        data = {
+            "domain": "structural",
+            "problem_type": "shaft_torsion",
+            "parameters": {"T": 2000, "L": 1.2, "G": 80e9, "d": 0.05},
+            "engineering_model": {"entities": [{"type": "hollow circular shaft"}]},
+        }
+        _, error = prepare_engineering_solver_input(data)
+        self.assertIsNotNone(error)
+        self.assertIn("inner diameter", error)
+
+    def test_pressure_vessel_requires_cylindrical_closed_end_geometry(self):
+        data = {
+            "domain": "structural",
+            "problem_type": "thin_pressure_vessel",
+            "parameters": {"p": 2e6, "R": 0.5, "t_wall": 0.005},
+            "engineering_model": {
+                "entities": [{"type": "cylindrical pressure vessel"}],
+                "boundary_conditions": [{"condition": "closed ends"}],
+            },
+        }
+        prepared, error = prepare_engineering_solver_input(data)
+        self.assertIsNone(error)
+        self.assertTrue(prepared["parameters_in_si"])
+
+    def test_pressure_vessel_rejects_thick_wall_geometry(self):
+        data = {
+            "domain": "structural",
+            "problem_type": "thin_pressure_vessel",
+            "parameters": {"p": 2e6, "R": 0.05, "t_wall": 0.01},
+            "engineering_model": {
+                "entities": [{"type": "cylindrical pressure vessel"}],
+                "boundary_conditions": [{"condition": "closed ends"}],
+            },
+        }
+        _, error = prepare_engineering_solver_input(data)
+        self.assertIsNotNone(error)
+        self.assertIn("thin-wall", error.lower())
+
     def test_column_effective_length_requires_explicit_restraints_or_factor(self):
         data = {
             "domain": "structural",
