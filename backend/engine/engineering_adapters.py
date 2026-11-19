@@ -40,7 +40,7 @@ def _support_facts(model: dict[str, Any]) -> set[str]:
         facts.extend(_flatten_values(model.get(key, [])))
     joined = " ".join(facts)
     tokens = set()
-    if any(word in joined for word in ("pinned", "pin support", "hinged", "hinge", "simply supported", "simple support")):
+    if any(word in joined for word in ("pinned", "pin", "pin support", "hinged", "hinge", "simply supported", "simple support")):
         tokens.add("pin")
     if "roller" in joined:
         tokens.add("roller")
@@ -163,9 +163,16 @@ def prepare_engineering_solver_input(data: dict[str, Any]) -> tuple[dict[str, An
         _set_if_missing(params, "L", _quantity_value(model, {"l", "length"}))
         _set_if_missing(params, "E", _quantity_value(model, {"e", "youngs_modulus", "elastic_modulus"}))
         _set_if_missing(params, "I", _quantity_value(model, {"i", "second_moment", "second_moment_of_area"}))
+        _set_if_missing(params, "K", _quantity_value(model, {"k", "effective_length_factor"}))
         if _number(params.get("K")) is None:
-            boundary = " ".join(_flatten_values(model.get("boundary_conditions", [])))
+            boundary = " ".join(
+                item
+                for key in ("boundary_conditions", "relationships", "entities")
+                for item in _flatten_values(model.get(key, []))
+            )
             if "pinned" in boundary and boundary.count("pinned") >= 2:
+                params["K"] = 1.0
+            elif "pin" in boundary and boundary.count("pin") >= 2:
                 params["K"] = 1.0
             elif "fixed" in boundary and boundary.count("fixed") >= 2:
                 params["K"] = 0.5
