@@ -26,6 +26,30 @@ class EngineeringIRTests(unittest.TestCase):
         self.assertEqual(model["quantities"][0]["dimension"], "length")
         self.assertEqual(model["quantities"][0]["source_text"], "spans six metres")
 
+    def test_preserves_quantities_without_legacy_solver_parameter(self):
+        model = build_engineering_model(
+            "A steel beam has a specified Poisson ratio.",
+            {
+                "domain": "structural",
+                "engineering_model": {
+                    "entities": [{"id": "beam_1", "type": "beam"}],
+                    "quantities": [{
+                        "name": "poisson_ratio", "value": 0.3,
+                        "dimension": "dimensionless", "role": "known",
+                        "object": "beam_1", "source_text": "Poisson ratio is 0.3",
+                    }],
+                },
+            },
+            {"L": 6},
+            {"L": "m"},
+        )
+        names = {quantity["name"] for quantity in model["quantities"]}
+        self.assertIn("poisson_ratio", names)
+        self.assertIn("L", names)
+        ratio = next(q for q in model["quantities"] if q["name"] == "poisson_ratio")
+        self.assertEqual(ratio["value"], 0.3)
+        self.assertIsNone(ratio["solver_value"])
+
     def test_does_not_invent_units(self):
         model = build_engineering_model("The load is 12.", {"domain": "structural"}, {"P": 12}, {})
         self.assertIsNone(model["quantities"][0]["unit"])
