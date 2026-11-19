@@ -6,6 +6,7 @@ They must never fill a missing engineering condition with a textbook default.
 from __future__ import annotations
 
 from copy import deepcopy
+import re
 from typing import Any
 
 
@@ -34,19 +35,39 @@ def _flatten_values(value: Any) -> list[str]:
     return [str(value).lower().replace("_", " ")]
 
 
+def _is_negated_occurrence(text: str, start: int) -> bool:
+    """Return True when a physical fact is explicitly negated nearby."""
+    prefix = text[max(0, start - 48):start].lower()
+    words = re.findall(r"[a-z]+", prefix)
+    recent = words[-4:]
+    if "not" in recent:
+        if recent[-2:] == ["not", "only"]:
+            return False
+        return True
+    return any(word in recent for word in ("no", "without", "neither", "never", "lacking", "absent"))
+
+
+def _has_asserted(pattern: str, facts: str) -> bool:
+    return any(
+        not _is_negated_occurrence(facts, match.start())
+        for match in re.finditer(pattern, facts, flags=re.IGNORECASE)
+    )
+
+
 def _support_facts(model: dict[str, Any]) -> set[str]:
-    facts: list[str] = []
-    for key in ("boundary_conditions", "relationships", "entities"):
-        facts.extend(_flatten_values(model.get(key, [])))
-    joined = " ".join(facts)
+    facts = " ".join(
+        item
+        for key in ("boundary_conditions", "relationships", "entities")
+        for item in _flatten_values(model.get(key, []))
+    )
     tokens = set()
-    if any(word in joined for word in ("pinned", "pin", "pin support", "hinged", "hinge", "simply supported", "simple support")):
+    if _has_asserted(r"\b(?:pinned|pin|hinged|hinge)\b", facts):
         tokens.add("pin")
-    if "roller" in joined:
+    if _has_asserted(r"\broller\b", facts):
         tokens.add("roller")
-    if any(word in joined for word in ("fixed", "clamped", "built in", "built-in")):
+    if _has_asserted(r"\b(?:fixed|clamped|built in|built-in)\b", facts):
         tokens.add("fixed")
-    if "free" in joined:
+    if _has_asserted(r"\bfree\b", facts):
         tokens.add("free")
     return tokens
 
@@ -57,7 +78,8 @@ def _has_simply_supported_condition(model: dict[str, Any]) -> bool:
         for key in ("boundary_conditions", "relationships", "entities")
         for item in _flatten_values(model.get(key, []))
     )
-    return "simply supported" in facts or ("pin" in _support_facts(model) and "roller" in _support_facts(model))
+    explicit = _has_asserted(r"\bsimply supported\b|\bsimple support\b", facts)
+    return explicit or ("pin" in _support_facts(model) and "roller" in _support_facts(model))
 
 
 def _has_cantilever_condition(model: dict[str, Any]) -> bool:
@@ -66,7 +88,8 @@ def _has_cantilever_condition(model: dict[str, Any]) -> bool:
         for key in ("boundary_conditions", "relationships", "entities")
         for item in _flatten_values(model.get(key, []))
     )
-    return "cantilever" in facts or ("fixed" in _support_facts(model) and "free" in _support_facts(model))
+    explicit = _has_asserted(r"\bcantilever\b", facts)
+    return explicit or ("fixed" in _support_facts(model) and "free" in _support_facts(model))
 
 
 _SI_UNIT_SCALES = {
@@ -170,13 +193,21 @@ def prepare_engineering_solver_input(data: dict[str, Any]) -> tuple[dict[str, An
                 for key in ("boundary_conditions", "relationships", "entities")
                 for item in _flatten_values(model.get(key, []))
             )
-            if "pinned" in boundary and boundary.count("pinned") >= 2:
+            pinned_at_both_ends = _has_asserted(r"\bpinned\s+at\s+both\s+ends\b", boundary)
+            fixed_at_both_ends = _has_asserted(r"\bfixed\s+at\s+both\s+ends\b", boundary)
+            pinned_count = sum(
+                1 for match in re.finditer(r"\b(?:pinned|pin)\b", boundary)
+                if not _is_negated_occurrence(boundary, match.start())
+            )
+            fixed_count = sum(
+                1 for match in re.finditer(r"\b(?:fixed|clamped)\b", boundary)
+                if not _is_negated_occurrence(boundary, match.start())
+            )
+            if pinned_at_both_ends or pinned_count >= 2:
                 params["K"] = 1.0
-            elif "pin" in boundary and boundary.count("pin") >= 2:
-                params["K"] = 1.0
-            elif "fixed" in boundary and boundary.count("fixed") >= 2:
+            elif fixed_at_both_ends or fixed_count >= 2:
                 params["K"] = 0.5
-            elif "fixed" in boundary and "free" in boundary:
+            elif _has_asserted(r"\bfixed\b", boundary) and _has_asserted(r"\bfree\b", boundary):
                 params["K"] = 2.0
             else:
                 return prepared, (
@@ -199,10 +230,14 @@ def prepare_engineering_solver_input(data: dict[str, Any]) -> tuple[dict[str, An
             for key in ("entities", "relationships", "boundary_conditions")
             for item in _flatten_values(model.get(key, []))
         )
-        if "hollow" in facts and _number(params.get("d_inner")) is None:
+        is_hollow = _has_asserted(r"\bhollow\b", facts)
+        is_solid = _has_asserted(r"\bsolid\b", facts)
+        if is_hollow and _number(params.get("d_inner")) is None:
             return prepared, "A hollow shaft requires its inner diameter."
-        if "solid" not in facts and "hollow" not in facts:
-            return prepared, "Specify whether the shaft has a solid or hollow circular cross-section."
+        if is_solid == is_hollow:
+            return prepared, "Specify one unambiguous solid or hollow circular cross-section."
+        if is_hollow and _number(params.get("d_inner")) is not None and _number(params.get("d_inner")) <= 0:
+            return prepared, "A hollow shaft inner diameter must be greater than zero."
         for key in ("T", "L", "G", "d"):
             value = _number(params.get(key))
             if value is None or value <= 0:
@@ -211,7 +246,7 @@ def prepare_engineering_solver_input(data: dict[str, Any]) -> tuple[dict[str, An
         inner = _number(params.get("d_inner"))
         if inner is not None and (inner < 0 or inner >= outer):
             return prepared, "The shaft inner diameter must be nonnegative and smaller than its outer diameter."
-        if "solid" in facts and inner is None:
+        if is_solid and inner is None:
             params["d_inner"] = 0.0
 
     elif problem_type == "thin_pressure_vessel":
@@ -223,10 +258,10 @@ def prepare_engineering_solver_input(data: dict[str, Any]) -> tuple[dict[str, An
             for key in ("entities", "relationships", "boundary_conditions")
             for item in _flatten_values(model.get(key, []))
         )
-        if "cylinder" not in facts and "cylindrical" not in facts:
+        if not _has_asserted(r"\bcylinder\b|\bcylindrical\b", facts):
             return prepared, "The current pressure-vessel solver supports cylindrical vessels only."
-        if "closed end" not in facts and "closed-end" not in facts:
-            return prepared, "State whether the cylindrical pressure vessel has closed ends before calculating longitudinal stress."
+        if not _has_asserted(r"\bclosed[- ]ends?\b", facts):
+            return prepared, "State explicitly that the cylindrical pressure vessel has closed ends before calculating longitudinal stress."
         for key in ("p", "R", "t_wall"):
             value = _number(params.get(key))
             if value is None or value <= 0:
