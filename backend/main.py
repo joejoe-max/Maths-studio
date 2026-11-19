@@ -1523,6 +1523,7 @@ async def solve(request: Request):
                     "raw_query": initial_spec.raw_query,
                     "parameters": dict(initial_spec.parameters or {}),
                     "canonical_problem": initial_spec.canonical.model_dump(),
+                    "engineering_model": initial_spec.engineering_model,
                     "isolated_input": True,
                 }
 
@@ -1556,6 +1557,7 @@ async def solve(request: Request):
                     sub["topic"] = spec.domain
                     sub["parameters"] = spec.parameters
                     sub["canonical_problem"] = spec.canonical.model_dump()
+                    sub["engineering_model"] = spec.engineering_model
                     spec.requested_method = sub["requested_method"]
                     if should_prompt_for_method(spec, _POPUP_DOMAINS):
                         yield _evt(build_method_selection_event(spec))
@@ -1581,6 +1583,7 @@ async def solve(request: Request):
                         "domain": spec.domain,
                         "problem_type": spec.problem_type,
                         "canonical_problem": spec.canonical.model_dump(),
+                        "engineering_model": spec.engineering_model,
                         "domain_confidence": [score.model_dump() for score in spec.canonical.domain_confidence],
                         "parser_debug": parser_debug,
                         "normalized_text": spec.normalized_text,
@@ -1591,6 +1594,17 @@ async def solve(request: Request):
                         "capabilities": [method.id for method in spec.feasible_methods],
                         "selected_method": spec.selected_method,
                     })
+
+                if spec and spec.engineering_model:
+                    engineering_validation = spec.engineering_model.get("validation", {})
+                    if engineering_validation.get("status") == "invalid":
+                        yield _evt(structured_error(
+                            "The extracted engineering model contains contradictory or physically invalid data.",
+                            problem_id=problem_id,
+                            stage="engineering_validation",
+                            suggestion="Review the extracted quantities, units and physical relationships before solving.",
+                        ).model_dump())
+                        continue
 
                 missing_event = missing_preview if spec else None
                 if missing_event:
