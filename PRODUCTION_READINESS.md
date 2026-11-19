@@ -10,13 +10,13 @@
 - Negated support/geometry conditions are rejected by adapter checks.
 - Benchmark harness with ten initial prompts, paraphrase groups, missing/contradictory cases, invented quantity/boundary checks and unit-normalized equivalence comparison.
 - Live Gemini benchmark runner: `python tests/run_live_engineering_benchmark.py`.
-- API smoke tests for FastAPI startup, health/analyze endpoints, routing isolation and proxy identity.
+- API smoke tests for FastAPI startup, health/analyze endpoints, a deterministic math solve over SSE, routing isolation and proxy identity.
 - Default solve concurrency bounded to six; stale in-memory rate-limit windows are periodically pruned.
 
 ## Verified evidence
 
 - GitHub Actions workflow: `.github/workflows/engineering-ir-tests.yml`.
-- Python 3.11 compile check and backend dependency installation.
+- Python 3.11 compile check and backend dependency installation; 58 automated tests pass across six test groups.
 - Engineering IR, semantic routing, adapter-to-solver, benchmark evaluator, API smoke and advanced structural regression suites.
 - The live benchmark harness itself is compile-checked and its evaluator is tested with controlled predictions.
 
@@ -27,7 +27,7 @@ The live model score has **not** been established by deterministic fixtures. The
 | Gate | Current evidence | Required before approval |
 | --- | --- | --- |
 | Live semantic understanding | Harness and runner exist; no live model score recorded | Run with configured Gemini credentials; review every failure and fallback source; add cases for any discovered semantic gap |
-| Full solve journey | Health and analyze endpoints have smoke coverage | Exercise `/api/compute/solve` through routing, IR validation, adapter, solver, SSE events and final result using a controlled provider/staging environment |
+| Full solve journey | Health/analyze plus a deterministic math SSE solve have smoke coverage | Exercise `/api/compute/solve` through routing, IR validation, adapter, solver, SSE events and final result using a controlled provider/staging environment |
 | Deployment | No staging deployment or production telemetry inspected | Verify actual deployment runtime, secrets, proxy topology, memory, timeouts and rollback |
 | Proxy-aware rate limiting | `TRUSTED_PROXY_IPS` allowlist support and unit tests exist | Set it only to actual trusted proxy peer IPs; ensure the proxy overwrites/sanitizes `X-Forwarded-For`; otherwise forwarded headers are intentionally ignored |
 | Rate-limit distribution | Current counters are process-local in-memory state | Confirm single-process deployment or move rate limiting to shared storage/edge infrastructure for multi-instance/serverless deployments |
