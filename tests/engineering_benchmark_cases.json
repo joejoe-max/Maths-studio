@@ -286,6 +286,12 @@
       "requested_outputs": [
         "bending moment",
         "reactions"
+      ],
+      "forbidden_boundary_terms": [
+        "pinned",
+        "roller",
+        "fixed",
+        "cantilever"
       ]
     }
   },
