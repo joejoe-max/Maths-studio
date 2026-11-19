@@ -14,6 +14,7 @@ import base64
 import binascii
 import importlib
 import io
+import ipaddress
 import json
 import logging
 import os
@@ -69,6 +70,7 @@ MAX_REQUEST_BYTES         = int(os.environ.get("MAX_REQUEST_BYTES",         25 *
 MAX_CONCURRENT_SOLVES     = int(os.environ.get("MAX_CONCURRENT_SOLVES",     6))
 RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("RATE_LIMIT_WINDOW_SECONDS", 60))
 RATE_LIMIT_MAX_REQUESTS   = int(os.environ.get("RATE_LIMIT_MAX_REQUESTS",   1000))
+TRUSTED_PROXY_IPS         = {ip.strip() for ip in os.environ.get("TRUSTED_PROXY_IPS", "").split(",") if ip.strip()}
 ROUTER_TIMEOUT_SECONDS    = float(os.environ.get("ROUTER_TIMEOUT_SECONDS",  20.0))
 SOLVE_TIMEOUT_SECONDS     = float(os.environ.get("SOLVE_TIMEOUT_SECONDS",   45.0))
 EXPLAINER_PROVIDER        = os.environ.get("EXPLAINER_PROVIDER", "groq").lower()
@@ -86,6 +88,7 @@ app = FastAPI(title="Engineering Studio Kernel")
 solve_semaphore       = asyncio.Semaphore(MAX_CONCURRENT_SOLVES)
 request_windows: dict[str, list[float]] = {}
 request_windows_lock  = asyncio.Lock()
+request_count         = 0
 
 GEMINI_API_KEY  = os.environ.get("AI_INTEGRATIONS_GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY", "")
 GEMINI_BASE_URL = os.environ.get("AI_INTEGRATIONS_GEMINI_BASE_URL")
@@ -149,9 +152,27 @@ app.add_middleware(
 )
 
 
+def _rate_limit_client_ip(request: Request) -> str:
+    """Use forwarded client IP only when the immediate peer is explicitly trusted.
+
+    Configure TRUSTED_PROXY_IPS only for proxies that overwrite/sanitize
+    X-Forwarded-For. Otherwise the direct socket peer is used.
+    """
+    peer = request.client.host if request.client else "unknown"
+    if peer not in TRUSTED_PROXY_IPS:
+        return peer
+    forwarded = request.headers.get("x-forwarded-for", "")
+    candidate = forwarded.split(",", 1)[0].strip()
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        return peer
+
+
 class SafetyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        client_ip = request.client.host if request.client else "unknown"
+        global request_count
+        client_ip = _rate_limit_client_ip(request)
 
         cl = request.headers.get("content-length")
         if cl:
@@ -172,6 +193,17 @@ class SafetyMiddleware(BaseHTTPMiddleware):
         )
         now = time.monotonic()
         async with request_windows_lock:
+            request_count += 1
+            # Bound memory when many distinct clients visit over time.
+            # Periodic full pruning avoids an O(number-of-clients) scan per request.
+            if request_count % 256 == 0:
+                cutoff = now - RATE_LIMIT_WINDOW_SECONDS
+                for key, timestamps in list(request_windows.items()):
+                    fresh = [stamp for stamp in timestamps if stamp >= cutoff]
+                    if fresh:
+                        request_windows[key] = fresh
+                    else:
+                        request_windows.pop(key, None)
             window = [t for t in request_windows.get(client_ip, [])
                       if now - t < RATE_LIMIT_WINDOW_SECONDS]
             if len(window) >= limit:
