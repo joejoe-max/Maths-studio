@@ -101,7 +101,15 @@ def evaluate_case(case: dict[str, Any], routing: dict[str, Any]) -> dict[str, An
         if expected_unit and _norm(found.get("unit")) != expected_unit:
             metrics["quantities"] = False
             errors.append(f'{name}: expected unit {expected_unit}, got {found.get("unit")}')
-    extras = set(quantities) - {_norm(k) for k in expected_q} - {_norm(k) for k in gold.get("allowed_extra_quantities", [])}
+    # Legacy routing parameters may include categorical metadata such as
+    # support_condition/load_type. They are not extracted physical quantities.
+    # Flag only unexpected numeric or explicitly unit-bearing quantities.
+    extras = {
+        name for name, item in quantities.items()
+        if name not in {_norm(k) for k in expected_q}
+        and name not in {_norm(k) for k in gold.get("allowed_extra_quantities", [])}
+        and (_number(item.get("value")) is not None or bool(item.get("unit")))
+    }
     metrics["no_invented_quantities"] = not extras
     if extras:
         errors.append(f"unexpected quantities (possible hallucination): {sorted(extras)}")
