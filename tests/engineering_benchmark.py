@@ -122,10 +122,14 @@ def evaluate_case(case: dict[str, Any], routing: dict[str, Any]) -> dict[str, An
 
     boundary_text = _walk(model.get("boundary_conditions", []))
     expected_boundary = [_norm(x) for x in gold.get("boundary_terms", [])]
+    forbidden_boundary = [_norm(x) for x in gold.get("forbidden_boundary_terms", [])]
     missing_boundary = [term for term in expected_boundary if term not in boundary_text]
-    metrics["boundary_conditions"] = not missing_boundary
+    invented_boundary = [term for term in forbidden_boundary if term in boundary_text]
+    metrics["boundary_conditions"] = not missing_boundary and not invented_boundary
     if missing_boundary:
         errors.append(f"missing boundary-condition evidence: {missing_boundary}")
+    if invented_boundary:
+        errors.append(f"invented or contradicted boundary conditions: {invented_boundary}")
 
     output_text = _walk(model.get("requested_outputs", []))
     expected_outputs = [_norm(x) for x in gold.get("requested_outputs", [])]
