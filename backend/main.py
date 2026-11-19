@@ -828,7 +828,7 @@ async def _semantic_route_text(user_input: str, history: list | None = None) -> 
             history=history or [],
         )
         parsed = _parse_gemini_json(raw, fallback_domain="unknown")
-        if isinstance(parsed.get("sub_problems"), list):
+        if isinstance(parsed.get("sub_problems"), list) and not parsed.get("_parse_fallback"):
             routing = _enrich_semantic_routing(parsed, user_input)
             routing["semantic_route_source"] = "gemini"
             return routing
@@ -1005,6 +1005,7 @@ def _parse_gemini_json(raw: str, fallback_domain: str) -> dict:
 
     logger.warning(f"All JSON strategies failed — using skeleton. Raw[:200]: {raw[:200]}")
     return {
+        "_parse_fallback": True,
         "sub_problems": [{
             "id":            "p1",
             "domain":        fallback_domain,
