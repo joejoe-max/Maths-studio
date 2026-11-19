@@ -105,6 +105,23 @@ class EngineeringIRTests(unittest.TestCase):
         self.assertEqual(model["validation"]["status"], "invalid")
         self.assertIn("support_1", model["validation"]["errors"][0])
 
+    def test_marks_essential_ambiguity_as_blocking(self):
+        model = build_engineering_model(
+            "A member carries a load; determine its maximum response.",
+            {
+                "domain": "structural",
+                "engineering_model": {
+                    "entities": [{"id": "member_1", "type": "beam"}],
+                    "quantities": [{"name": "w", "value": 12, "unit": "kN/m", "dimension": "force_per_length"}],
+                    "blocking_issues": ["Support conditions are not specified."],
+                },
+            },
+            {"w": 12},
+            {},
+        )
+        self.assertEqual(model["validation"]["status"], "blocked")
+        self.assertTrue(model["blocking_issues"])
+
     def test_keeps_ambiguity_and_missing_information_visible(self):
         model = build_engineering_model(
             "A beam is loaded.",
