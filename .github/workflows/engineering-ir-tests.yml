@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - "backend/engine/**"
+      - "backend/capabilities/**"
       - "backend/main.py"
       - "tests/**"
       - ".github/workflows/engineering-ir-tests.yml"
