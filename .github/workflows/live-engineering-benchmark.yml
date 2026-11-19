@@ -1,0 +1,47 @@
+name: Live engineering understanding benchmark
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 2 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  live-benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install backend dependencies
+        run: python -m pip install --upgrade pip -r backend/requirements.txt
+      - name: Run live Gemini benchmark
+        if: ${{ env.GEMINI_API_KEY != '' }}
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          AI_INTEGRATIONS_GEMINI_API_KEY: ${{ secrets.AI_INTEGRATIONS_GEMINI_API_KEY }}
+        run: |
+          python tests/run_live_engineering_benchmark.py \
+            --predictions engineering-benchmark-predictions.jsonl \
+            --report engineering-benchmark-report.json
+      - name: Explain skipped live run
+        if: ${{ env.GEMINI_API_KEY == '' && env.AI_INTEGRATIONS_GEMINI_API_KEY == '' }}
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          AI_INTEGRATIONS_GEMINI_API_KEY: ${{ secrets.AI_INTEGRATIONS_GEMINI_API_KEY }}
+        run: echo "Live benchmark skipped: configure GEMINI_API_KEY or AI_INTEGRATIONS_GEMINI_API_KEY repository secret."
+      - name: Upload benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engineering-understanding-benchmark
+          path: |
+            engineering-benchmark-predictions.jsonl
+            engineering-benchmark-report.json
+          if-no-files-found: ignore
+          retention-days: 30
