@@ -357,7 +357,8 @@ statement, not from phrase matching. Use this shape:
   "requested_outputs": ["support_reactions"],
   "assumptions": [],
   "missing_information": [],
-  "ambiguities": []
+  "ambiguities": [],
+  "blocking_issues": []
 }
 Use entity types and relationship types that describe the actual physical system;
 they are open vocabulary, not a closed list. Every extracted quantity should be
@@ -366,8 +367,10 @@ Keep source_text as an exact evidence excerpt. A value without a reliable unit
 must not be assigned a guessed unit. Distinguish explicit facts, derived facts,
 and assumptions. Never turn a common textbook convention into an assumption
 unless the user states it. If information is ambiguous or absent, record it in
-ambiguities or missing_information and do not invent it. Keep quantities in
-parameters too when they map to existing solver parameters.
+ambiguities or missing_information and do not invent it. Put an issue in
+blocking_issues only when the requested result cannot be uniquely determined
+without clarification; optional or nonessential omissions must not block a solve.
+Keep quantities in parameters too when they map to existing solver parameters.
 
 Use the actual source units and convert to SI in parameters only when certain.
 The example above is illustrative; do not assume those values for other inputs.
