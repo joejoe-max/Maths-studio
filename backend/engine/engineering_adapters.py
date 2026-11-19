@@ -69,16 +69,32 @@ def _has_cantilever_condition(model: dict[str, Any]) -> bool:
     return "cantilever" in facts or ("fixed" in _support_facts(model) and "free" in _support_facts(model))
 
 
+_SI_UNIT_SCALES = {
+    "m": 1.0, "mm": 1e-3, "cm": 1e-2,
+    "n": 1.0, "kn": 1e3,
+    "n/m": 1.0, "kn/m": 1e3,
+    "pa": 1.0, "kpa": 1e3, "mpa": 1e6, "gpa": 1e9,
+    "m^4": 1.0, "m4": 1.0, "mm^4": 1e-12, "mm4": 1e-12,
+    "1": 1.0, "dimensionless": 1.0,
+}
+
+
 def _quantity_value(model: dict[str, Any], names: set[str]) -> float | None:
     for quantity in model.get("quantities", []):
         if not isinstance(quantity, dict):
             continue
-        if str(quantity.get("name", "")).strip().lower() in names:
-            value = _number(quantity.get("solver_value"))
-            if value is None:
-                value = _number(quantity.get("value"))
-            if value is not None:
-                return value
+        if str(quantity.get("name", "")).strip().lower() not in names:
+            continue
+        # Prefer a value already normalized by the trusted parser.
+        value = _number(quantity.get("solver_value"))
+        if value is not None:
+            return value
+        # Otherwise convert only units with an explicit, known SI scale.
+        raw = _number(quantity.get("value"))
+        unit = str(quantity.get("unit") or "").strip().lower().replace(" ", "")
+        scale = _SI_UNIT_SCALES.get(unit)
+        if raw is not None and scale is not None:
+            return raw * scale
     return None
 
 
