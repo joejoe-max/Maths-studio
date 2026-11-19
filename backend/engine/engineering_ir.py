@@ -92,6 +92,7 @@ def build_engineering_model(raw_query: str, sub: dict[str, Any], parameters: dic
         "assumptions":supplied.get("assumptions") if isinstance(supplied.get("assumptions"),list) else [],
         "missing_information":list(supplied.get("missing_information") or sub.get("missing_information") or []),
         "ambiguities":list(supplied.get("ambiguities") or sub.get("ambiguities") or []),
+        "blocking_issues":list(supplied.get("blocking_issues") or sub.get("blocking_issues") or []),
         "validation":{"status":"valid","errors":[],"warnings":[]},
     }
     errors, warnings = [], []
@@ -124,5 +125,7 @@ def build_engineering_model(raw_query: str, sub: dict[str, Any], parameters: dic
     if not model["relationships"]: warnings.append("No explicit physical relationships were supplied; solver compatibility requires review.")
     if model["ambiguities"]: warnings.append("The statement contains unresolved ambiguities.")
     if model["missing_information"]: warnings.append("The statement may be under-specified for the requested outputs.")
-    model["validation"] = {"status":"invalid" if errors else ("needs_review" if warnings else "valid"),"errors":errors,"warnings":warnings}
+    if model["blocking_issues"]: warnings.append("The requested result is blocked by missing or ambiguous engineering information.")
+    status = "invalid" if errors else ("blocked" if model["blocking_issues"] else ("needs_review" if warnings else "valid"))
+    model["validation"] = {"status":status,"errors":errors,"warnings":warnings}
     return model
