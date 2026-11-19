@@ -30,3 +30,4 @@ jobs:
           python -m unittest discover -s tests -p "test_engineering_ir.py" -v
           python -m unittest discover -s tests -p "test_semantic_domain_routing.py" -v
           python -m unittest discover -s tests -p "test_engineering_adapters.py" -v
+          python -m unittest backend.tests.test_advanced_structural -v
