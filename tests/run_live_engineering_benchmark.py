@@ -31,10 +31,13 @@ async def run_live(cases: list[dict], predictions_path: Path, report_path: Path)
 
     predictions = {}
     rows = []
+    router_sources = {}
     for case in cases:
         routing = await _semantic_route_text(case["prompt"])
         predictions[case["id"]] = routing
-        rows.append({"id": case["id"], "routing": routing})
+        source = routing.get("semantic_route_source", "unknown")
+        router_sources[case["id"]] = source
+        rows.append({"id": case["id"], "routing": routing, "semantic_route_source": source})
 
     predictions_path.write_text(
         "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
@@ -42,6 +45,11 @@ async def run_live(cases: list[dict], predictions_path: Path, report_path: Path)
     )
     report = run_benchmark(cases, predictions)
     report["evaluation_mode"] = "live_gemini_router"
+    report["router_sources"] = router_sources
+    report["deterministic_fallback_cases"] = [
+        case_id for case_id, source in router_sources.items()
+        if source != "gemini"
+    ]
     report["model_fallback_warning"] = (
         "The router may fall back to deterministic parsing when Gemini fails; "
         "inspect saved predictions and backend logs before attributing failures."
