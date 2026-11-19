@@ -813,9 +813,11 @@ def _enrich_semantic_routing(routing: dict, original_text: str) -> dict:
 
 async def _semantic_route_text(user_input: str, history: list | None = None) -> dict:
     if not _has_solvable_signal(user_input):
-        return {"sub_problems": []}
+        return {"sub_problems": [], "semantic_route_source": "none"}
     if not gemini_client:
-        return _deterministic_routing_skeleton(user_input)
+        routing = _deterministic_routing_skeleton(user_input)
+        routing["semantic_route_source"] = "deterministic_fallback"
+        return routing
     try:
         raw = await _gemini_call(
             system_prompt=_DOCUMENT_ANALYSIS_PROMPT,
@@ -827,12 +829,16 @@ async def _semantic_route_text(user_input: str, history: list | None = None) -> 
         )
         parsed = _parse_gemini_json(raw, fallback_domain="unknown")
         if isinstance(parsed.get("sub_problems"), list):
-            return _enrich_semantic_routing(parsed, user_input)
+            routing = _enrich_semantic_routing(parsed, user_input)
+            routing["semantic_route_source"] = "gemini"
+            return routing
     except ModelRateLimitError as exc:
         logger.warning("Gemini semantic stage rate-limited; using deterministic parser: %s", exc)
     except Exception as exc:
         logger.warning("Gemini semantic stage unavailable; using deterministic parser: %s", exc)
-    return _deterministic_routing_skeleton(user_input)
+    routing = _deterministic_routing_skeleton(user_input)
+    routing["semantic_route_source"] = "deterministic_fallback"
+    return routing
 
 
 # ──────────────────────────────────────────────────────────────────[...]
