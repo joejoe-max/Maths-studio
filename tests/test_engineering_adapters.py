@@ -1,5 +1,8 @@
+import asyncio
 import unittest
 
+from backend.capabilities.advanced_structural_engine import solve_advanced_structural
+from backend.capabilities.beam_engine import solve_beam
 from backend.engine.engineering_adapters import prepare_engineering_solver_input
 
 
@@ -180,6 +183,96 @@ class EngineeringAdapterTests(unittest.TestCase):
         _, error = prepare_engineering_solver_input(data)
         self.assertIsNotNone(error)
         self.assertIn("thin-wall", error.lower())
+
+    def test_adapted_beam_input_reaches_deterministic_beam_solver(self):
+        data = beam_payload(
+            boundary_conditions=[{"condition": "simply supported"}],
+            parameters={"L": 6.0, "P": 10_000.0, "a": 3.0, "E": 200e9, "I": 8e-5},
+        )
+        prepared, error = prepare_engineering_solver_input(data)
+        self.assertIsNone(error)
+
+        async def run():
+            return [event async for event in solve_beam(prepared)]
+
+        events = asyncio.run(run())
+        final = next(event for event in events if event.get("type") == "final")
+        summary = {item["label"]: float(item["value"]) for item in final["summary"]}
+        self.assertAlmostEqual(summary["R_A"], 5_000.0, delta=0.1)
+        self.assertAlmostEqual(summary["R_B"], 5_000.0, delta=0.1)
+        self.assertAlmostEqual(summary["M_max"], 15_000.0, delta=0.1)
+
+    def test_adapted_column_input_reaches_euler_solver(self):
+        data = {
+            "domain": "structural",
+            "problem_type": "euler_column_buckling",
+            "parameters": {"L": 3, "E": 200e9, "I": 8e-6},
+            "engineering_model": {
+                "boundary_conditions": [
+                    {"location": "top", "condition": "pinned"},
+                    {"location": "bottom", "condition": "pinned"},
+                ],
+                "quantities": [],
+            },
+        }
+        prepared, error = prepare_engineering_solver_input(data)
+        self.assertIsNone(error)
+
+        async def run():
+            return [event async for event in solve_advanced_structural(prepared)]
+
+        events = asyncio.run(run())
+        final = next(event for event in events if event.get("type") == "final")
+        pcr = float(next(item["value"] for item in final["summary"] if item["label"] == "P_cr"))
+        self.assertAlmostEqual(pcr, 1.754596338e6, delta=1.0)
+
+    def test_adapted_shaft_input_reaches_torsion_solver(self):
+        data = {
+            "domain": "structural",
+            "problem_type": "shaft_torsion",
+            "parameters": {},
+            "engineering_model": {
+                "entities": [{"id": "shaft_1", "type": "solid circular shaft"}],
+                "quantities": [
+                    {"name": "T", "value": 2, "unit": "kN*m"},
+                    {"name": "L", "value": 1200, "unit": "mm"},
+                    {"name": "G", "value": 80, "unit": "GPa"},
+                    {"name": "d", "value": 50, "unit": "mm"},
+                ],
+            },
+        }
+        prepared, error = prepare_engineering_solver_input(data)
+        self.assertIsNone(error)
+
+        async def run():
+            return [event async for event in solve_advanced_structural(prepared)]
+
+        events = asyncio.run(run())
+        final = next(event for event in events if event.get("type") == "final")
+        summary = {item["label"]: float(item["value"]) for item in final["summary"]}
+        self.assertAlmostEqual(summary["tau_max"], 8.148733086e7, delta=10.0)
+
+    def test_adapted_pressure_vessel_input_reaches_membrane_solver(self):
+        data = {
+            "domain": "structural",
+            "problem_type": "thin_pressure_vessel",
+            "parameters": {"p": 2e6, "R": 0.5, "t_wall": 0.005},
+            "engineering_model": {
+                "entities": [{"type": "cylindrical pressure vessel"}],
+                "boundary_conditions": [{"condition": "closed ends"}],
+            },
+        }
+        prepared, error = prepare_engineering_solver_input(data)
+        self.assertIsNone(error)
+
+        async def run():
+            return [event async for event in solve_advanced_structural(prepared)]
+
+        events = asyncio.run(run())
+        final = next(event for event in events if event.get("type") == "final")
+        summary = {item["label"]: float(item["value"]) for item in final["summary"]}
+        self.assertAlmostEqual(summary["sigma_hoop"], 200e6, delta=1.0)
+        self.assertAlmostEqual(summary["sigma_longitudinal"], 100e6, delta=1.0)
 
     def test_column_effective_length_requires_explicit_restraints_or_factor(self):
         data = {
