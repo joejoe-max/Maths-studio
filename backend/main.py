@@ -250,48 +250,100 @@ If no readable mathematical or textual content exists, return:
 """
 
 _DOCUMENT_ANALYSIS_PROMPT = """
-You are the first semantic-understanding stage for an engineering/math solver.
+You are a rigorous semantic parser for an engineering and mathematics computation
+engine. Your job is to understand what the student MEANS, not to match a fixed
+sentence template. The same problem may be written as a formal statement, a
+conversation, shorthand, passive voice, reordered clauses, a numbered list, or
+a paragraph. Treat these as equivalent when their physical meaning is equivalent.
 
-Read the user text and identify independent solvable problems. Use meaning, not
-formatting: numbering, headings, markdown, punctuation, or separators may be
-missing or misleading.
+CORE RULES
+1. Read the complete statement before extracting anything. Resolve references
+   such as "the beam", "at its other end", "the same pipe", and "respectively".
+2. Do not require phrases such as "given", "find", "is subjected to", or "uniform
+   distributed load". Recognise synonyms and equivalent descriptions.
+3. Separate facts from requests. Identify every stated value, its physical
+   quantity, unit, object, location, direction, and condition.
+4. Never invent a value, material, support condition, geometry, load position,
+   boundary condition, or design code. Do not silently assume a standard case.
+5. Convert units to SI only when the source unit is unambiguous. Preserve the
+   original value/unit in an additional source note if conversion is performed.
+6. Distinguish similar quantities carefully: mass vs weight, pressure vs force,
+   total load vs load intensity, diameter vs radius, stress vs force, moment vs
+   second moment of area, temperature vs temperature difference.
+7. Identify the requested unknown(s) from intent, even when the question says
+   "how much", "what will it be", "work out", "obtain", "evaluate", "check",
+   "show that", or does not use an explicit command.
+8. Keep all linked sub-questions about one physical system together. Do not split
+   a beam's reactions, shear force, bending moment, deflection and stress into
+   unrelated problems. Split only genuinely independent tasks.
+9. If a phrase or value has multiple plausible engineering meanings, preserve
+   the ambiguity in missing_information/ambiguities instead of guessing.
+10. input_summary MUST be the exact relevant source wording copied from the
+    user's input, not an invented or paraphrased replacement. Preserve all
+    sentences needed to understand the problem. This lets deterministic parsers
+    and audit tools inspect the original evidence.
 
-For each problem determine:
-- domain and subdomain/problem_type
-- concepts and requested outputs
-- equations and variables
-- numerical parameters with units converted to SI where possible
-- missing information, only if truly required
+ENGINEERING EXTRACTION
+For structural problems, identify member/system type, supports and restraints,
+span/length, cross-section, material, E, I, loads (point/UDL/UVL/moment), load
+magnitudes, positions, directions, combinations, and requested responses.
+For mechanics, identify bodies, mass, forces, initial/final velocity, acceleration,
+time, displacement, angles, motion constraints and reference frame.
+For fluids, identify fluid/properties, pipe/duct geometry, flow rate, areas,
+velocities, elevations, pressures, head losses and flow regime.
+For thermodynamics, identify substance/state, pressure, volume, temperature,
+mass/moles, process type, heat and work.
+For circuits, identify topology, components, values, source types, polarity,
+frequency, initial conditions and requested voltage/current/power.
+For every domain, capture constraints, boundary/initial conditions and units.
 
-Keep dependent subparts of the same engineering setup together. Split unrelated
-problems even when they are written in one paragraph. Return at most 5 problems.
+Use solver-friendly parameter names where they are clear (for example structural:
+L, E, I, w, P, a, b, h; mechanics: m, u, v, a, t, s, theta; fluids: Q, A1,
+A2, v1, v2, p1, p2, z1, z2; thermo: P, V, T, m, n; circuits: V, I, R, C).
+Do not force a quantity into a parameter if its identity is uncertain. Use numeric
+JSON values, not numeric strings, and keep units in a separate units object.
+Do not output equations unless they are explicitly stated or can be derived
+unambiguously from the stated physical relationships. Never fabricate equations.
+
+SEMANTIC EQUIVALENCE EXAMPLE
+These all describe the same setup: "a simply supported 6 m beam carries a UDL
+of 10 kN/m"; "a beam supported at both ends has a six-metre span and an evenly
+distributed load of ten kilonewtons per metre"; "find the end reactions for a
+6-metre beam with a uniform load intensity of 10 kN/m". Extract the same support
+condition, span, load type, load intensity and requested reactions.
 
 AVAILABLE DOMAINS:
 algebra, calculus, structural, mechanics, fluids, thermo, circuits, physics,
 controls, statistics, matrix, data_viz, unknown
 
-Return ONLY this JSON shape:
+Return ONLY valid JSON in this shape:
 {
   "sub_problems": [
     {
       "id": "p1",
-      "domain": "<domain>",
-      "problem_type": "<specific type>",
-      "input_summary": "<self-contained restatement>",
+      "domain": "structural",
+      "problem_type": "beam_analysis",
+      "input_summary": "<exact relevant source wording>",
       "parameters": {
-        "equations": ["<optional equations>"],
-        "target_variable": "<optional>",
-        "<key>": "<value>"
+        "L": 6.0,
+        "w": 10000.0,
+        "support_condition": "simply_supported",
+        "load_type": "udl",
+        "target_variable": "support_reactions"
       },
-      "required_outputs": ["<outputs>"],
+      "units": {"L": "m", "w": "N/m"},
+      "required_outputs": ["support_reactions"],
       "missing_information": [],
+      "ambiguities": [],
       "confidence": 0.0
     }
   ]
 }
 
-If there is no solvable mathematical or engineering problem, return:
-{"sub_problems": []}
+Use the actual source units and convert to SI in parameters only when certain.
+The example above is illustrative; do not assume those values for other inputs.
+Return an empty sub_problems list only when there is no solvable math or
+engineering task in the input.
 """
 
 # ── Prompt C: student-friendly explanation wrapper ───────────────────────────
@@ -646,6 +698,47 @@ def validate_and_normalize(routing: dict, raw_query: str = "") -> dict:
     return routing
 
 
+def _enrich_semantic_routing(routing: dict, original_text: str) -> dict:
+    """
+    Fill gaps in AI extraction with deterministic evidence from the original
+    statement. AI interpretation owns intent/classification; deterministic
+    extraction may only add parameters it independently recognises and never
+    overwrites an AI-extracted value.
+    """
+    try:
+        deterministic = _deterministic_routing_skeleton(original_text)
+        deterministic_subs = deterministic.get("sub_problems") or []
+        semantic_subs = routing.get("sub_problems") or []
+        for index, semantic in enumerate(semantic_subs):
+            if not isinstance(semantic, dict):
+                continue
+            domain = str(semantic.get("domain") or "unknown").lower()
+            candidates = [
+                item for item in deterministic_subs
+                if isinstance(item, dict)
+                and str(item.get("domain") or "unknown").lower() == domain
+            ]
+            fallback = candidates[0] if candidates else (
+                deterministic_subs[index] if index < len(deterministic_subs) else None
+            )
+            if not isinstance(fallback, dict):
+                continue
+            fallback_domain = str(fallback.get("domain") or "unknown").lower()
+            if domain not in {"unknown", fallback_domain}:
+                continue
+            extracted = fallback.get("parameters")
+            if isinstance(extracted, dict):
+                merged = dict(extracted)
+                merged.update(semantic.get("parameters") or {})
+                semantic["parameters"] = merged
+            if not semantic.get("input_summary"):
+                semantic["input_summary"] = fallback.get("input_summary") or original_text
+        routing["sub_problems"] = semantic_subs
+    except Exception as exc:
+        logger.warning("Deterministic semantic enrichment skipped: %s", exc)
+    return routing
+
+
 async def _semantic_route_text(user_input: str, history: list | None = None) -> dict:
     if not _has_solvable_signal(user_input):
         return {"sub_problems": []}
@@ -662,7 +755,7 @@ async def _semantic_route_text(user_input: str, history: list | None = None) -> 
         )
         parsed = _parse_gemini_json(raw, fallback_domain="unknown")
         if isinstance(parsed.get("sub_problems"), list):
-            return parsed
+            return _enrich_semantic_routing(parsed, user_input)
     except ModelRateLimitError as exc:
         logger.warning("Gemini semantic stage rate-limited; using deterministic parser: %s", exc)
     except Exception as exc:
