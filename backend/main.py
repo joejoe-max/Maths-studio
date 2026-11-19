@@ -66,7 +66,7 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────────────────────────[...]
 
 MAX_REQUEST_BYTES         = int(os.environ.get("MAX_REQUEST_BYTES",         25 * 1024 * 1024))
-MAX_CONCURRENT_SOLVES     = int(os.environ.get("MAX_CONCURRENT_SOLVES",     1000))
+MAX_CONCURRENT_SOLVES     = int(os.environ.get("MAX_CONCURRENT_SOLVES",     6))
 RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("RATE_LIMIT_WINDOW_SECONDS", 60))
 RATE_LIMIT_MAX_REQUESTS   = int(os.environ.get("RATE_LIMIT_MAX_REQUESTS",   1000))
 ROUTER_TIMEOUT_SECONDS    = float(os.environ.get("ROUTER_TIMEOUT_SECONDS",  20.0))
