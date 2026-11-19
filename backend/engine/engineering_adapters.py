@@ -115,7 +115,8 @@ def prepare_engineering_solver_input(data: dict[str, Any]) -> tuple[dict[str, An
     problem_type = str(prepared.get("problem_type") or "").lower()
     model = prepared.get("engineering_model")
     if domain not in {"structural", "advanced_structural"}:
-        return prepared, None
+        prepared["parameters_in_si"] = True
+    return prepared, None
     if not isinstance(model, dict):
         return prepared, "The engineering interpretation is missing; the solver cannot verify the physical setup."
 
