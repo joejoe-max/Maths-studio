@@ -36,6 +36,39 @@ class EngineeringIRTests(unittest.TestCase):
         self.assertEqual(model["validation"]["status"], "invalid")
         self.assertTrue(model["validation"]["errors"])
 
+    def test_flags_relationships_to_missing_entities(self):
+        model = build_engineering_model(
+            "A beam is connected to a support.",
+            {
+                "domain": "structural",
+                "engineering_model": {
+                    "entities": [{"id": "beam_1", "type": "beam"}],
+                    "relationships": [{
+                        "type": "supported_by", "source": "beam_1", "target": "support_1"
+                    }],
+                },
+            },
+            {},
+            {},
+        )
+        self.assertEqual(model["validation"]["status"], "invalid")
+        self.assertIn("support_1", model["validation"]["errors"][0])
+
+    def test_keeps_ambiguity_and_missing_information_visible(self):
+        model = build_engineering_model(
+            "A beam is loaded.",
+            {
+                "domain": "structural",
+                "missing_information": ["support condition"],
+                "ambiguities": ["load may be total force or intensity"],
+            },
+            {},
+            {},
+        )
+        self.assertEqual(model["validation"]["status"], "needs_review")
+        self.assertTrue(model["missing_information"])
+        self.assertTrue(model["ambiguities"])
+
     def test_flags_dimensionally_inconsistent_relation(self):
         model = build_engineering_model(
             "A physical relation is stated.",
