@@ -20,7 +20,7 @@ _UNIT_DIMENSIONS = {
     "k":"temperature","degc":"temperature","°c":"temperature","a":"current","ma":"current",
     "v":"voltage","ohm":"resistance","hz":"frequency","1/s":"frequency",
 }
-_POSITIVE_KEYS = {"l","length","span","width","height","depth","diameter","radius","area","volume","mass","density","e","youngs_modulus","i","second_moment_of_area"}
+_POSITIVE_KEYS = {"l","length","span","width","height","depth","diameter","radius","area","volume","mass","density"}
 
 def _dimension(unit: Any) -> str | None:
     if not isinstance(unit, str): return None
