@@ -69,5 +69,36 @@ class EngineeringBenchmarkHarnessTests(unittest.TestCase):
         self.assertFalse(result["metrics"]["no_invented_quantities"])
 
 
+    def test_underspecified_beam_cannot_gain_invented_supports(self):
+        case = next(item for item in self.cases if item["id"] == "beam_missing_support")
+        routing = _routing(case)
+        routing["sub_problems"][0]["engineering_model"]["boundary_conditions"] = [
+            {"condition": "simply supported with pin and roller"}
+        ]
+        result = evaluate_case(case, routing)
+        self.assertFalse(result["metrics"]["boundary_conditions"])
+        self.assertTrue(any("invented or contradicted" in error for error in result["errors"]))
+
+    def test_equivalence_signature_normalizes_units(self):
+        from tests.engineering_benchmark import run_benchmark
+
+        case_a = dict(self.cases[0])
+        case_b = dict(case_a)
+        case_b["id"] = "beam_unit_variant"
+        case_a["equivalence_group"] = "same_beam"
+        case_b["equivalence_group"] = "same_beam"
+        routing_a = _routing(case_a)
+        routing_b = _routing(case_b)
+        model_b = routing_b["sub_problems"][0]["engineering_model"]
+        for quantity in model_b["quantities"]:
+            if quantity["name"] == "L":
+                quantity["value"] = 6000
+                quantity["unit"] = "mm"
+        report = run_benchmark([case_a, case_b], {
+            case_a["id"]: routing_a,
+            case_b["id"]: routing_b,
+        })
+        self.assertEqual(report["equivalence_failures"], [])
+
 if __name__ == "__main__":
     unittest.main()
