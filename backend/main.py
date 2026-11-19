@@ -718,9 +718,17 @@ def _enrich_semantic_routing(routing: dict, original_text: str) -> dict:
                 if isinstance(item, dict)
                 and str(item.get("domain") or "unknown").lower() == domain
             ]
-            fallback = candidates[0] if candidates else (
-                deterministic_subs[index] if index < len(deterministic_subs) else None
-            )
+            indexed = deterministic_subs[index] if index < len(deterministic_subs) else None
+            if (
+                isinstance(indexed, dict)
+                and str(indexed.get("domain") or "unknown").lower() == domain
+            ):
+                fallback = indexed
+            elif len(candidates) == 1:
+                fallback = candidates[0]
+            else:
+                # Do not mix extracted quantities from two same-domain tasks.
+                fallback = None
             if not isinstance(fallback, dict):
                 continue
             fallback_domain = str(fallback.get("domain") or "unknown").lower()
