@@ -998,7 +998,8 @@ def _normalize_routing_shape(data: dict, fallback_domain: str) -> dict:
     # Accept a root-level model from older/loose model responses only when
     # there is exactly one sub-problem; never smear one model across many tasks.
     if len(data["sub_problems"]) == 1 and isinstance(data.get("engineering_model"), dict):
-        data["sub_problems"][0].setdefault("engineering_model", data["engineering_model"])
+        if not data["sub_problems"][0].get("engineering_model"):
+            data["sub_problems"][0]["engineering_model"] = data["engineering_model"]
     return data
 
 
