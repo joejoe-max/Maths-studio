@@ -24,7 +24,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install minimal test dependencies
+      - name: Install backend dependencies and test client
         run: python -m pip install --upgrade pip -r backend/requirements.txt httpx
       - name: Compile changed Python modules
         run: python -m py_compile backend/main.py backend/engine/engineering_ir.py backend/engine/engineering_adapters.py backend/engine/problem_pipeline.py backend/capabilities/beam_engine.py tests/engineering_benchmark.py tests/run_live_engineering_benchmark.py
