@@ -4,6 +4,8 @@ from __future__ import annotations
 import os
 import sys
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 from pathlib import Path
 
 BACKEND = str(Path(__file__).resolve().parents[1] / "backend")
@@ -13,7 +15,7 @@ if BACKEND not in sys.path:
 os.environ.setdefault("MAX_CONCURRENT_SOLVES", "6")
 
 from fastapi.testclient import TestClient
-from main import app, MAX_CONCURRENT_SOLVES, _normalize_routing_shape
+from main import app, MAX_CONCURRENT_SOLVES, _normalize_routing_shape, _rate_limit_client_ip
 
 
 class ApiSmokeTests(unittest.TestCase):
@@ -54,6 +56,30 @@ class ApiSmokeTests(unittest.TestCase):
         }, "unknown")
         self.assertNotIn("engineering_model", multiple["sub_problems"][0])
         self.assertNotIn("engineering_model", multiple["sub_problems"][1])
+
+    def test_forwarded_ip_is_ignored_from_untrusted_peer(self):
+        request = SimpleNamespace(
+            client=SimpleNamespace(host="198.51.100.10"),
+            headers={"x-forwarded-for": "203.0.113.8"},
+        )
+        with patch("main.TRUSTED_PROXY_IPS", {"10.0.0.5"}):
+            self.assertEqual(_rate_limit_client_ip(request), "198.51.100.10")
+
+    def test_forwarded_ip_is_used_from_configured_trusted_proxy(self):
+        request = SimpleNamespace(
+            client=SimpleNamespace(host="10.0.0.5"),
+            headers={"x-forwarded-for": "203.0.113.8, 10.0.0.4"},
+        )
+        with patch("main.TRUSTED_PROXY_IPS", {"10.0.0.5"}):
+            self.assertEqual(_rate_limit_client_ip(request), "203.0.113.8")
+
+    def test_invalid_forwarded_ip_falls_back_to_peer(self):
+        request = SimpleNamespace(
+            client=SimpleNamespace(host="10.0.0.5"),
+            headers={"x-forwarded-for": "not-an-ip"},
+        )
+        with patch("main.TRUSTED_PROXY_IPS", {"10.0.0.5"}):
+            self.assertEqual(_rate_limit_client_ip(request), "10.0.0.5")
 
 if __name__ == "__main__":
     unittest.main()
