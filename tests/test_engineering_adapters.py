@@ -84,6 +84,40 @@ class EngineeringAdapterTests(unittest.TestCase):
         self.assertEqual(prepared["parameters"]["P"], 10_000)
         self.assertEqual(prepared["parameters"]["E"], 200e9)
 
+    def test_recognized_semantic_units_are_converted_to_si(self):
+        data = beam_payload(
+            boundary_conditions=[{"condition": "simply supported"}],
+            parameters={},
+            quantities=[
+                {"name": "L", "value": 6000, "unit": "mm"},
+                {"name": "P", "value": 10, "unit": "kN"},
+                {"name": "a", "value": 3000, "unit": "mm"},
+                {"name": "E", "value": 200, "unit": "GPa"},
+                {"name": "I", "value": 8e-5, "unit": "m^4"},
+            ],
+        )
+        prepared, error = prepare_engineering_solver_input(data)
+        self.assertIsNone(error)
+        self.assertAlmostEqual(prepared["parameters"]["L"], 6.0)
+        self.assertAlmostEqual(prepared["parameters"]["P"], 10_000.0)
+        self.assertAlmostEqual(prepared["parameters"]["a"], 3.0)
+        self.assertAlmostEqual(prepared["parameters"]["E"], 200e9)
+
+    def test_unknown_semantic_units_are_not_guessed(self):
+        data = beam_payload(
+            boundary_conditions=[{"condition": "simply supported"}],
+            parameters={},
+            quantities=[
+                {"name": "L", "value": 6, "unit": "furlong"},
+                {"name": "P", "value": 10, "unit": "mystery-force"},
+                {"name": "E", "value": 200, "unit": "GPa"},
+                {"name": "I", "value": 8e-5, "unit": "m^4"},
+            ],
+        )
+        _, error = prepare_engineering_solver_input(data)
+        self.assertIsNotNone(error)
+        self.assertIn("span", error.lower())
+
     def test_column_effective_length_requires_explicit_restraints_or_factor(self):
         data = {
             "domain": "structural",
