@@ -29,6 +29,7 @@ class EngineeringAdapterTests(unittest.TestCase):
         prepared, error = prepare_engineering_solver_input(data)
         self.assertIsNone(error)
         self.assertIn("simply supported", prepared["raw_query"])
+        self.assertTrue(prepared["parameters_in_si"])
 
     def test_missing_supports_block_solver(self):
         prepared, error = prepare_engineering_solver_input(beam_payload())
