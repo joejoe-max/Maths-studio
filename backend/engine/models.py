@@ -78,6 +78,7 @@ class SubProblemSpec(BaseModel):
     requested_method: str | None = None
     feasible_methods: list[MethodOption] = Field(default_factory=list)
     selected_method: str | None = None
+    engineering_model: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProblemSpec(BaseModel):

@@ -303,7 +303,8 @@ async def solve_beam(data: dict):
     E_val = _safe_float(params.get("E", params.get("elastic_modulus", params.get("youngs_modulus"))), 200e9)
     I_val = _safe_float(params.get("I", params.get("second_moment", params.get("moment_of_inertia"))), 1e-4)
     depth_mm = _safe_float(params.get("d", params.get("h", params.get("depth"))))
-    P, w = _normalize_load_units(raw, P, w)
+    if not data.get("parameters_in_si"):
+        P, w = _normalize_load_units(raw, P, w)
 
     # Validation
     if L <= ZERO_TOL:

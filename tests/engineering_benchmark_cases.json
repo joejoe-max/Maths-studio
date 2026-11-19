@@ -1,0 +1,327 @@
+[
+  {
+    "id": "beam_textbook",
+    "equivalence_group": "beam_pin_udl",
+    "prompt": "A simply supported beam of span 6 m carries a uniformly distributed load of 10 kN/m. Determine the support reactions.",
+    "gold": {
+      "domain": "structural",
+      "problem_type": "beam_analysis",
+      "entity_types": [
+        "beam",
+        "support"
+      ],
+      "quantities": {
+        "L": {
+          "value": 6,
+          "unit": "m"
+        },
+        "w": {
+          "value": 10,
+          "unit": "kN/m"
+        }
+      },
+      "relationship_types": [
+        "supported_by"
+      ],
+      "boundary_terms": [
+        "pinned",
+        "roller"
+      ],
+      "requested_outputs": [
+        "support_reactions"
+      ]
+    }
+  },
+  {
+    "id": "beam_conversational",
+    "equivalence_group": "beam_pin_udl",
+    "prompt": "There's a 6-metre beam resting on a pin at one end and a roller at the other. A load of 10 kilonewtons per metre is spread evenly along it. What do the two supports carry?",
+    "gold": {
+      "domain": "structural",
+      "problem_type": "beam_analysis",
+      "entity_types": [
+        "beam",
+        "support"
+      ],
+      "quantities": {
+        "L": {
+          "value": 6,
+          "unit": "m"
+        },
+        "w": {
+          "value": 10,
+          "unit": "kN/m"
+        }
+      },
+      "relationship_types": [
+        "supported_by"
+      ],
+      "boundary_terms": [
+        "pinned",
+        "roller"
+      ],
+      "requested_outputs": [
+        "support_reactions"
+      ]
+    }
+  },
+  {
+    "id": "column_textbook",
+    "equivalence_group": "column_pinned_pinned",
+    "prompt": "A 3 m long column is pinned at both ends. Its Young's modulus is 200 GPa and its second moment of area is 8 × 10^-6 m^4. Find the Euler critical load.",
+    "gold": {
+      "domain": "structural",
+      "problem_type": "euler_column_buckling",
+      "entity_types": [
+        "column"
+      ],
+      "quantities": {
+        "L": {
+          "value": 3,
+          "unit": "m"
+        },
+        "E": {
+          "value": 200,
+          "unit": "GPa"
+        },
+        "I": {
+          "value": 0.000008,
+          "unit": "m^4"
+        }
+      },
+      "boundary_terms": [
+        "pinned"
+      ],
+      "requested_outputs": [
+        "critical_load"
+      ]
+    }
+  },
+  {
+    "id": "column_indirect",
+    "equivalence_group": "column_pinned_pinned",
+    "prompt": "Consider a 3000 mm compression member. Neither end is built in; each end is free to rotate but cannot translate sideways. Take E as 200 GPa and I as 8e-6 m4. At what axial load does elastic buckling begin?",
+    "gold": {
+      "domain": "structural",
+      "problem_type": "euler_column_buckling",
+      "entity_types": [
+        "column"
+      ],
+      "quantities": {
+        "L": {
+          "value": 3000,
+          "unit": "mm"
+        },
+        "E": {
+          "value": 200,
+          "unit": "GPa"
+        },
+        "I": {
+          "value": 0.000008,
+          "unit": "m^4"
+        }
+      },
+      "boundary_terms": [
+        "pinned"
+      ],
+      "requested_outputs": [
+        "critical_load"
+      ]
+    }
+  },
+  {
+    "id": "shaft_textbook",
+    "equivalence_group": "shaft_solid_torsion",
+    "prompt": "A solid circular shaft, 1.2 m long and 50 mm in diameter, transmits a torque of 2 kN·m. The shear modulus is 80 GPa. Determine the maximum shear stress.",
+    "gold": {
+      "domain": "structural",
+      "problem_type": "shaft_torsion",
+      "entity_types": [
+        "shaft"
+      ],
+      "quantities": {
+        "T": {
+          "value": 2,
+          "unit": "kN*m"
+        },
+        "L": {
+          "value": 1.2,
+          "unit": "m"
+        },
+        "d": {
+          "value": 50,
+          "unit": "mm"
+        },
+        "G": {
+          "value": 80,
+          "unit": "GPa"
+        }
+      },
+      "requested_outputs": [
+        "maximum shear stress"
+      ]
+    }
+  },
+  {
+    "id": "shaft_story",
+    "equivalence_group": "shaft_solid_torsion",
+    "prompt": "Power is being carried through a round, non-hollow steel member. The member is 1200 mm from end to end and 50 mm across. It twists under 2 kN m of applied turning moment; use a shear modulus of 80 GPa. How high is the peak shear stress?",
+    "gold": {
+      "domain": "structural",
+      "problem_type": "shaft_torsion",
+      "entity_types": [
+        "shaft"
+      ],
+      "quantities": {
+        "T": {
+          "value": 2,
+          "unit": "kN*m"
+        },
+        "L": {
+          "value": 1200,
+          "unit": "mm"
+        },
+        "d": {
+          "value": 50,
+          "unit": "mm"
+        },
+        "G": {
+          "value": 80,
+          "unit": "GPa"
+        }
+      },
+      "requested_outputs": [
+        "maximum shear stress"
+      ]
+    }
+  },
+  {
+    "id": "vessel_textbook",
+    "equivalence_group": "closed_cylinder_pressure",
+    "prompt": "A closed-end cylindrical pressure vessel has internal radius 0.5 m, wall thickness 5 mm and internal pressure 2 MPa. Calculate hoop and longitudinal stresses.",
+    "gold": {
+      "domain": "structural",
+      "problem_type": "thin_pressure_vessel",
+      "entity_types": [
+        "cylindrical pressure vessel"
+      ],
+      "quantities": {
+        "R": {
+          "value": 0.5,
+          "unit": "m"
+        },
+        "t_wall": {
+          "value": 5,
+          "unit": "mm"
+        },
+        "p": {
+          "value": 2,
+          "unit": "MPa"
+        }
+      },
+      "boundary_terms": [
+        "closed"
+      ],
+      "requested_outputs": [
+        "hoop stress",
+        "longitudinal stress"
+      ]
+    }
+  },
+  {
+    "id": "vessel_reordered",
+    "equivalence_group": "closed_cylinder_pressure",
+    "prompt": "Find the circumferential and lengthwise membrane stresses in a thin-walled cylinder. The ends are sealed. Its wall is 5 mm thick around a 0.5 m internal radius, and the contained fluid exerts 2 MPa.",
+    "gold": {
+      "domain": "structural",
+      "problem_type": "thin_pressure_vessel",
+      "entity_types": [
+        "cylindrical pressure vessel"
+      ],
+      "quantities": {
+        "R": {
+          "value": 0.5,
+          "unit": "m"
+        },
+        "t_wall": {
+          "value": 5,
+          "unit": "mm"
+        },
+        "p": {
+          "value": 2,
+          "unit": "MPa"
+        }
+      },
+      "boundary_terms": [
+        "closed"
+      ],
+      "requested_outputs": [
+        "hoop stress",
+        "longitudinal stress"
+      ]
+    }
+  },
+  {
+    "id": "beam_missing_support",
+    "prompt": "A 6 m beam carries a uniformly distributed load of 10 kN/m. Find the maximum bending moment and reactions.",
+    "gold": {
+      "domain": "structural",
+      "problem_type": "beam_analysis",
+      "entity_types": [
+        "beam"
+      ],
+      "quantities": {
+        "L": {
+          "value": 6,
+          "unit": "m"
+        },
+        "w": {
+          "value": 10,
+          "unit": "kN/m"
+        }
+      },
+      "required_blocker_terms": [
+        "support"
+      ],
+      "requested_outputs": [
+        "bending moment",
+        "reactions"
+      ],
+      "forbidden_boundary_terms": [
+        "pinned",
+        "roller",
+        "fixed",
+        "cantilever"
+      ]
+    }
+  },
+  {
+    "id": "beam_conflicting_load",
+    "prompt": "A simply supported beam spans 6 m. The load is stated as 10 kN/m in the first sentence, but the diagram description says the same load is a total point force of 10 kN at midspan. Find the reactions.",
+    "gold": {
+      "domain": "structural",
+      "problem_type": "beam_analysis",
+      "entity_types": [
+        "beam",
+        "support"
+      ],
+      "quantities": {
+        "L": {
+          "value": 6,
+          "unit": "m"
+        }
+      },
+      "required_blocker_terms": [
+        "load",
+        "ambig"
+      ],
+      "boundary_terms": [
+        "pinned",
+        "roller"
+      ],
+      "requested_outputs": [
+        "reactions"
+      ]
+    }
+  }
+]

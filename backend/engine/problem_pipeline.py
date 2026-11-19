@@ -19,6 +19,7 @@ from .math_normalizer import (
     split_knowns_unknowns,
 )
 from .solver_utils import polish_display_math
+from .engineering_ir import build_engineering_model, ENGINEERING_DOMAINS
 from .models import (
     CanonicalProblem,
     DomainScore,
@@ -123,6 +124,7 @@ def build_problem_spec(raw_input: str, routing: dict[str, Any]) -> ProblemSpec:
             equations=equations,
             units=canonical.units,
             requested_method=sub.get("requested_method") or params.get("method"),
+            engineering_model=(build_engineering_model(raw_query, {**sub, "domain": domain, "problem_type": canonical.problem_type}, canonical.parameters, canonical.units) if domain in ENGINEERING_DOMAINS else {}),
         )
         spec.feasible_methods = determine_methods(spec)
         spec.selected_method = _auto_select_method(spec)
@@ -286,8 +288,21 @@ def build_canonical_problem(raw_query: str, params: dict[str, Any] | None = None
     units = extract_units(raw_query, params)
     structure = _build_structure(equations, unknowns, units, normalized_text)
     domain_scores = _score_domains(canonical_text=normalized_text, params=params, equations=equations, units=units, structure=structure, hinted_domain=str(sub.get("domain") or ""))
+    domain_scores = _apply_semantic_domain_evidence(domain_scores, sub)
     domain = domain_scores[0].domain if domain_scores and domain_scores[0].confidence >= 0.35 else "unknown"
-    problem_type = _infer_problem_type(domain, equations, structure, normalized_text, params, str(sub.get("problem_type") or ""))
+    semantic_model = sub.get("engineering_model")
+    semantic_problem_type = str(sub.get("problem_type") or "").strip().lower()
+    problem_type = _infer_problem_type(domain, equations, structure, normalized_text, params, semantic_problem_type)
+    if (
+        domain in _ENGINEERING_DOMAINS
+        and isinstance(semantic_model, dict)
+        and semantic_model.get("entities")
+        and semantic_model.get("quantities")
+        and semantic_problem_type not in {"", "general", "unknown"}
+    ):
+        # Preserve the semantic task classification when the wording itself
+        # does not contain the conventional keywords used by legacy inference.
+        problem_type = semantic_problem_type
     params = _canonicalize_params(params, equations, domain, problem_type, normalized_text, units)
 
     return CanonicalProblem(
@@ -574,6 +589,43 @@ def _score_domains(canonical_text: str, params: dict[str, Any], equations: list[
     ranked = [DomainScore(domain=domain, confidence=round(min(score / total, 1.0), 3), evidence=evidence[domain]) for domain, score in scores.items() if score > 0]
     ranked.sort(key=lambda item: item.confidence, reverse=True)
     return ranked or [DomainScore(domain="unknown", confidence=0.0, evidence=[])]
+
+
+def _apply_semantic_domain_evidence(scores: list[DomainScore], sub: dict[str, Any]) -> list[DomainScore]:
+    """Prioritise a structured physical interpretation over surface wording."""
+    hinted = str(sub.get("domain") or "").lower()
+    model = sub.get("engineering_model")
+    if hinted not in _ENGINEERING_DOMAINS or not isinstance(model, dict):
+        return scores
+    entities, quantities = model.get("entities"), model.get("quantities")
+    if not isinstance(entities, list) or not entities or not isinstance(quantities, list) or not quantities:
+        return scores
+    try:
+        confidence = float(sub.get("confidence") or 0.75)
+    except (TypeError, ValueError):
+        confidence = 0.75
+    if not 0.0 < confidence <= 1.0:
+        confidence = 0.75
+    if confidence < 0.55:
+        return scores
+
+    target_confidence = max(0.60, min(0.95, confidence))
+    others = [score for score in scores if score.domain != hinted]
+    other_total = sum(max(score.confidence, 0.0) for score in others)
+    adjusted = [
+        DomainScore(
+            domain=score.domain,
+            confidence=round((max(score.confidence, 0.0) / other_total) * (1.0 - target_confidence), 3),
+            evidence=score.evidence,
+        )
+        for score in others
+    ] if other_total else []
+    existing = next((score for score in scores if score.domain == hinted), None)
+    evidence = list(existing.evidence if existing else [])
+    evidence.append("structured semantic engineering model (entities and quantities)")
+    adjusted.append(DomainScore(domain=hinted, confidence=target_confidence, evidence=evidence))
+    adjusted.sort(key=lambda item: item.confidence, reverse=True)
+    return adjusted
 
 
 def _has_non_algebra_intent(text: str) -> bool:

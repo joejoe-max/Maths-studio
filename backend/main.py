@@ -14,6 +14,7 @@ import base64
 import binascii
 import importlib
 import io
+import ipaddress
 import json
 import logging
 import os
@@ -45,6 +46,7 @@ from engine.interaction import (
     build_missing_parameters_event,
     should_prompt_for_method,
 )
+from engine.engineering_adapters import prepare_engineering_solver_input
 from engine.solver_utils import (
     apply_standard_defaults,
     merge_params,
@@ -65,9 +67,10 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────────────────────────[...]
 
 MAX_REQUEST_BYTES         = int(os.environ.get("MAX_REQUEST_BYTES",         25 * 1024 * 1024))
-MAX_CONCURRENT_SOLVES     = int(os.environ.get("MAX_CONCURRENT_SOLVES",     1000))
+MAX_CONCURRENT_SOLVES     = int(os.environ.get("MAX_CONCURRENT_SOLVES",     6))
 RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("RATE_LIMIT_WINDOW_SECONDS", 60))
 RATE_LIMIT_MAX_REQUESTS   = int(os.environ.get("RATE_LIMIT_MAX_REQUESTS",   1000))
+TRUSTED_PROXY_IPS         = {ip.strip() for ip in os.environ.get("TRUSTED_PROXY_IPS", "").split(",") if ip.strip()}
 ROUTER_TIMEOUT_SECONDS    = float(os.environ.get("ROUTER_TIMEOUT_SECONDS",  20.0))
 SOLVE_TIMEOUT_SECONDS     = float(os.environ.get("SOLVE_TIMEOUT_SECONDS",   45.0))
 EXPLAINER_PROVIDER        = os.environ.get("EXPLAINER_PROVIDER", "groq").lower()
@@ -85,6 +88,7 @@ app = FastAPI(title="Engineering Studio Kernel")
 solve_semaphore       = asyncio.Semaphore(MAX_CONCURRENT_SOLVES)
 request_windows: dict[str, list[float]] = {}
 request_windows_lock  = asyncio.Lock()
+request_count         = 0
 
 GEMINI_API_KEY  = os.environ.get("AI_INTEGRATIONS_GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY", "")
 GEMINI_BASE_URL = os.environ.get("AI_INTEGRATIONS_GEMINI_BASE_URL")
@@ -148,9 +152,27 @@ app.add_middleware(
 )
 
 
+def _rate_limit_client_ip(request: Request) -> str:
+    """Use forwarded client IP only when the immediate peer is explicitly trusted.
+
+    Configure TRUSTED_PROXY_IPS only for proxies that overwrite/sanitize
+    X-Forwarded-For. Otherwise the direct socket peer is used.
+    """
+    peer = request.client.host if request.client else "unknown"
+    if peer not in TRUSTED_PROXY_IPS:
+        return peer
+    forwarded = request.headers.get("x-forwarded-for", "")
+    candidate = forwarded.split(",", 1)[0].strip()
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        return peer
+
+
 class SafetyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        client_ip = request.client.host if request.client else "unknown"
+        global request_count
+        client_ip = _rate_limit_client_ip(request)
 
         cl = request.headers.get("content-length")
         if cl:
@@ -171,6 +193,17 @@ class SafetyMiddleware(BaseHTTPMiddleware):
         )
         now = time.monotonic()
         async with request_windows_lock:
+            request_count += 1
+            # Bound memory when many distinct clients visit over time.
+            # Periodic full pruning avoids an O(number-of-clients) scan per request.
+            if request_count % 256 == 0:
+                cutoff = now - RATE_LIMIT_WINDOW_SECONDS
+                for key, timestamps in list(request_windows.items()):
+                    fresh = [stamp for stamp in timestamps if stamp >= cutoff]
+                    if fresh:
+                        request_windows[key] = fresh
+                    else:
+                        request_windows.pop(key, None)
             window = [t for t in request_windows.get(client_ip, [])
                       if now - t < RATE_LIMIT_WINDOW_SECONDS]
             if len(window) >= limit:
@@ -339,6 +372,37 @@ Return ONLY valid JSON in this shape:
     }
   ]
 }
+
+For EACH engineering-domain sub-problem, place an "engineering_model" object INSIDE that sub-problem object, alongside its parameters and units. Do NOT place it at the response root. This is a solver-independent physical representation,
+not another wording classification. Populate it from the meaning of the complete
+statement, not from phrase matching. Use this shape:
+{
+  "entities": [{"id":"beam_1","type":"beam","attributes":{}}, {"id":"support_left","type":"support","attributes":{}}],
+  "quantities": [{
+    "name":"L","value":6.0,"unit":"m","dimension":"length",
+    "role":"known","object":"beam_1","location":null,"direction":null,
+    "source_text":"the beam is six metres long","confidence":0.98
+  }],
+  "relationships": [{"type":"supported_by","source":"beam_1","target":"support_left","attributes":{}}],
+  "boundary_conditions": [],
+  "initial_conditions": [],
+  "requested_outputs": ["support_reactions"],
+  "assumptions": [],
+  "missing_information": [],
+  "ambiguities": [],
+  "blocking_issues": []
+}
+Use entity types and relationship types that describe the actual physical system;
+they are open vocabulary, not a closed list. Every extracted quantity should be
+attached to the correct object and location when the statement makes that clear.
+Keep source_text as an exact evidence excerpt. A value without a reliable unit
+must not be assigned a guessed unit. Distinguish explicit facts, derived facts,
+and assumptions. Never turn a common textbook convention into an assumption
+unless the user states it. If information is ambiguous or absent, record it in
+ambiguities or missing_information and do not invent it. Put an issue in
+blocking_issues only when the requested result cannot be uniquely determined
+without clarification; optional or nonessential omissions must not block a solve.
+Keep quantities in parameters too when they map to existing solver parameters.
 
 Use the actual source units and convert to SI in parameters only when certain.
 The example above is illustrative; do not assume those values for other inputs.
@@ -749,9 +813,11 @@ def _enrich_semantic_routing(routing: dict, original_text: str) -> dict:
 
 async def _semantic_route_text(user_input: str, history: list | None = None) -> dict:
     if not _has_solvable_signal(user_input):
-        return {"sub_problems": []}
+        return {"sub_problems": [], "semantic_route_source": "none"}
     if not gemini_client:
-        return _deterministic_routing_skeleton(user_input)
+        routing = _deterministic_routing_skeleton(user_input)
+        routing["semantic_route_source"] = "deterministic_fallback"
+        return routing
     try:
         raw = await _gemini_call(
             system_prompt=_DOCUMENT_ANALYSIS_PROMPT,
@@ -762,13 +828,17 @@ async def _semantic_route_text(user_input: str, history: list | None = None) -> 
             history=history or [],
         )
         parsed = _parse_gemini_json(raw, fallback_domain="unknown")
-        if isinstance(parsed.get("sub_problems"), list):
-            return _enrich_semantic_routing(parsed, user_input)
+        if isinstance(parsed.get("sub_problems"), list) and not parsed.get("_parse_fallback"):
+            routing = _enrich_semantic_routing(parsed, user_input)
+            routing["semantic_route_source"] = "gemini"
+            return routing
     except ModelRateLimitError as exc:
         logger.warning("Gemini semantic stage rate-limited; using deterministic parser: %s", exc)
     except Exception as exc:
         logger.warning("Gemini semantic stage unavailable; using deterministic parser: %s", exc)
-    return _deterministic_routing_skeleton(user_input)
+    routing = _deterministic_routing_skeleton(user_input)
+    routing["semantic_route_source"] = "deterministic_fallback"
+    return routing
 
 
 # ──────────────────────────────────────────────────────────────────[...]
@@ -935,6 +1005,7 @@ def _parse_gemini_json(raw: str, fallback_domain: str) -> dict:
 
     logger.warning(f"All JSON strategies failed — using skeleton. Raw[:200]: {raw[:200]}")
     return {
+        "_parse_fallback": True,
         "sub_problems": [{
             "id":            "p1",
             "domain":        fallback_domain,
@@ -956,12 +1027,18 @@ def _normalize_routing_shape(data: dict, fallback_domain: str) -> dict:
             "input_summary": data.get("input_summary", ""),
             "parameters":    data.get("parameters", {}),
             "confidence":    data.get("confidence", 0.80),
+            "engineering_model": data.get("engineering_model", {}),
         }]}
 
     subs = data["sub_problems"]
     if not isinstance(subs, list):
         subs = [subs] if isinstance(subs, dict) else []
     data["sub_problems"] = [s for s in subs if isinstance(s, dict) and s]
+    # Accept a root-level model from older/loose model responses only when
+    # there is exactly one sub-problem; never smear one model across many tasks.
+    if len(data["sub_problems"]) == 1 and isinstance(data.get("engineering_model"), dict):
+        if not data["sub_problems"][0].get("engineering_model"):
+            data["sub_problems"][0]["engineering_model"] = data["engineering_model"]
     return data
 
 
@@ -1494,6 +1571,7 @@ async def solve(request: Request):
                     "raw_query": initial_spec.raw_query,
                     "parameters": dict(initial_spec.parameters or {}),
                     "canonical_problem": initial_spec.canonical.model_dump(),
+                    "engineering_model": initial_spec.engineering_model,
                     "isolated_input": True,
                 }
 
@@ -1527,6 +1605,7 @@ async def solve(request: Request):
                     sub["topic"] = spec.domain
                     sub["parameters"] = spec.parameters
                     sub["canonical_problem"] = spec.canonical.model_dump()
+                    sub["engineering_model"] = spec.engineering_model
                     spec.requested_method = sub["requested_method"]
                     if should_prompt_for_method(spec, _POPUP_DOMAINS):
                         yield _evt(build_method_selection_event(spec))
@@ -1552,6 +1631,7 @@ async def solve(request: Request):
                         "domain": spec.domain,
                         "problem_type": spec.problem_type,
                         "canonical_problem": spec.canonical.model_dump(),
+                        "engineering_model": spec.engineering_model,
                         "domain_confidence": [score.model_dump() for score in spec.canonical.domain_confidence],
                         "parser_debug": parser_debug,
                         "normalized_text": spec.normalized_text,
@@ -1563,9 +1643,45 @@ async def solve(request: Request):
                         "selected_method": spec.selected_method,
                     })
 
+                if spec and spec.engineering_model:
+                    engineering_validation = spec.engineering_model.get("validation", {})
+                    validation_status = engineering_validation.get("status")
+                    if validation_status in {"invalid", "blocked"}:
+                        is_blocked = validation_status == "blocked"
+                        yield _evt(structured_error(
+                            (
+                                "The requested engineering result cannot be determined without clarification."
+                                if is_blocked
+                                else "The extracted engineering model contains contradictory or physically invalid data."
+                            ),
+                            problem_id=problem_id,
+                            stage="engineering_validation",
+                            suggestion=(
+                                "Clarify the blocking engineering information listed in the parsed problem before solving."
+                                if is_blocked
+                                else "Review the extracted quantities, units and physical relationships before solving."
+                            ),
+                        ).model_dump())
+                        continue
+
                 missing_event = missing_preview if spec else None
                 if missing_event:
                     yield _evt(missing_event)
+                    continue
+
+                sub["domain"] = domain
+                sub["problem_type"] = problem_type
+                sub["raw_query"] = solve_input
+                sub["parameters"] = dict(sub.get("parameters") or (spec.parameters if spec else {}))
+                sub["engineering_model"] = spec.engineering_model if spec else sub.get("engineering_model", {})
+                sub, adapter_error = prepare_engineering_solver_input(sub)
+                if adapter_error:
+                    yield _evt(structured_error(
+                        adapter_error,
+                        problem_id=problem_id,
+                        stage="engineering_adapter",
+                        suggestion="Provide the missing physical properties and boundary conditions explicitly.",
+                    ).model_dump())
                     continue
 
                 solver_fn = _get_solver(domain, problem_type, raw_query=solve_input, spec=spec)

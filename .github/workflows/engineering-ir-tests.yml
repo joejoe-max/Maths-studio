@@ -1,0 +1,38 @@
+name: Engineering semantic model tests
+# Keep focused parser, IR, solver-adapter and benchmark-harness regressions running on every PR update.
+
+on:
+  pull_request:
+    paths:
+      - "backend/engine/**"
+      - "backend/capabilities/**"
+      - "backend/main.py"
+      - "tests/**"
+      - ".github/workflows/engineering-ir-tests.yml"
+  push:
+    branches:
+      - main
+      - engineering-semantic-model
+
+jobs:
+  engineering-ir:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install backend dependencies and test client
+        run: python -m pip install --upgrade pip -r backend/requirements.txt httpx
+      - name: Compile changed Python modules
+        run: python -m py_compile backend/main.py backend/engine/engineering_ir.py backend/engine/engineering_adapters.py backend/engine/problem_pipeline.py backend/capabilities/beam_engine.py tests/engineering_benchmark.py tests/run_live_engineering_benchmark.py
+      - name: Run engineering semantic model tests
+        run: |
+          python -m unittest discover -s tests -p "test_engineering_ir.py" -v
+          python -m unittest discover -s tests -p "test_semantic_domain_routing.py" -v
+          python -m unittest discover -s tests -p "test_engineering_adapters.py" -v
+          python -m unittest tests.test_engineering_benchmark -v
+          python -m unittest tests.test_api_smoke -v
+          python -m unittest backend.tests.test_advanced_structural -v
