@@ -290,7 +290,19 @@ def build_canonical_problem(raw_query: str, params: dict[str, Any] | None = None
     domain_scores = _score_domains(canonical_text=normalized_text, params=params, equations=equations, units=units, structure=structure, hinted_domain=str(sub.get("domain") or ""))
     domain_scores = _apply_semantic_domain_evidence(domain_scores, sub)
     domain = domain_scores[0].domain if domain_scores and domain_scores[0].confidence >= 0.35 else "unknown"
-    problem_type = _infer_problem_type(domain, equations, structure, normalized_text, params, str(sub.get("problem_type") or ""))
+    semantic_model = sub.get("engineering_model")
+    semantic_problem_type = str(sub.get("problem_type") or "").strip().lower()
+    problem_type = _infer_problem_type(domain, equations, structure, normalized_text, params, semantic_problem_type)
+    if (
+        domain in _ENGINEERING_DOMAINS
+        and isinstance(semantic_model, dict)
+        and semantic_model.get("entities")
+        and semantic_model.get("quantities")
+        and semantic_problem_type not in {"", "general", "unknown"}
+    ):
+        # Preserve the semantic task classification when the wording itself
+        # does not contain the conventional keywords used by legacy inference.
+        problem_type = semantic_problem_type
     params = _canonicalize_params(params, equations, domain, problem_type, normalized_text, units)
 
     return CanonicalProblem(
