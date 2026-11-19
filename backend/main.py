@@ -45,6 +45,7 @@ from engine.interaction import (
     build_missing_parameters_event,
     should_prompt_for_method,
 )
+from engine.engineering_adapters import prepare_engineering_solver_input
 from engine.solver_utils import (
     apply_standard_defaults,
     merge_params,
@@ -1622,6 +1623,21 @@ async def solve(request: Request):
                 missing_event = missing_preview if spec else None
                 if missing_event:
                     yield _evt(missing_event)
+                    continue
+
+                sub["domain"] = domain
+                sub["problem_type"] = problem_type
+                sub["raw_query"] = solve_input
+                sub["parameters"] = dict(sub.get("parameters") or (spec.parameters if spec else {}))
+                sub["engineering_model"] = spec.engineering_model if spec else sub.get("engineering_model", {})
+                sub, adapter_error = prepare_engineering_solver_input(sub)
+                if adapter_error:
+                    yield _evt(structured_error(
+                        adapter_error,
+                        problem_id=problem_id,
+                        stage="engineering_adapter",
+                        suggestion="Provide the missing physical properties and boundary conditions explicitly.",
+                    ).model_dump())
                     continue
 
                 solver_fn = _get_solver(domain, problem_type, raw_query=solve_input, spec=spec)
