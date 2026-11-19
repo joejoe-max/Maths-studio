@@ -19,6 +19,7 @@ from .math_normalizer import (
     split_knowns_unknowns,
 )
 from .solver_utils import polish_display_math
+from .engineering_ir import build_engineering_model, ENGINEERING_DOMAINS
 from .models import (
     CanonicalProblem,
     DomainScore,
@@ -123,6 +124,7 @@ def build_problem_spec(raw_input: str, routing: dict[str, Any]) -> ProblemSpec:
             equations=equations,
             units=canonical.units,
             requested_method=sub.get("requested_method") or params.get("method"),
+            engineering_model=(build_engineering_model(raw_query, {**sub, "domain": domain, "problem_type": canonical.problem_type}, canonical.parameters, canonical.units) if domain in ENGINEERING_DOMAINS else {}),
         )
         spec.feasible_methods = determine_methods(spec)
         spec.selected_method = _auto_select_method(spec)
