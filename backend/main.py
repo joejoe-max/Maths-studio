@@ -1600,12 +1600,22 @@ async def solve(request: Request):
 
                 if spec and spec.engineering_model:
                     engineering_validation = spec.engineering_model.get("validation", {})
-                    if engineering_validation.get("status") == "invalid":
+                    validation_status = engineering_validation.get("status")
+                    if validation_status in {"invalid", "blocked"}:
+                        is_blocked = validation_status == "blocked"
                         yield _evt(structured_error(
-                            "The extracted engineering model contains contradictory or physically invalid data.",
+                            (
+                                "The requested engineering result cannot be determined without clarification."
+                                if is_blocked
+                                else "The extracted engineering model contains contradictory or physically invalid data."
+                            ),
                             problem_id=problem_id,
                             stage="engineering_validation",
-                            suggestion="Review the extracted quantities, units and physical relationships before solving.",
+                            suggestion=(
+                                "Clarify the blocking engineering information listed in the parsed problem before solving."
+                                if is_blocked
+                                else "Review the extracted quantities, units and physical relationships before solving."
+                            ),
                         ).model_dump())
                         continue
 
