@@ -8,7 +8,6 @@ import {
 import NotebookWorkspace from './components/NotebookWorkspace';
 import EngineeringInput from './components/EngineeringInput';
 import NotebookSidebar from './components/NotebookSidebar';
-import MethodPopup from './components/MethodPopup';
 import InputPopup from './components/InputPopup';
 
 export default function App() {
@@ -17,16 +16,12 @@ export default function App() {
   const [inputText, setInputText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [methodPopup, setMethodPopup] = useState({
-    isOpen: false, methods: [], domain: null, problemDescription: '',
-  });
   const [inputPopup, setInputPopup] = useState({
     isOpen: false, fields: [], problemDescription: '',
   });
 
   const abortRef = useRef(null);
   const scrollRef = useRef(null);
-  const methodResolveRef = useRef(null);
   const inputResolveRef = useRef(null);
 
   useEffect(() => {
@@ -49,36 +44,6 @@ export default function App() {
   const loadHistory = async () => {
     const data = await getHistory();
     setHistory(data.sort((a, b) => b.timestamp - a.timestamp));
-  };
-
-  const askForMethod = (methods, domain, query) => {
-    return new Promise((resolve) => {
-      methodResolveRef.current = resolve;
-      setMethodPopup({
-        isOpen: true,
-        methods: methods,
-        domain: domain,
-        problemDescription: query.length > 120 ? query.slice(0, 120) + '…' : query,
-      });
-    });
-  };
-
-  const handleMethodSelect = (method) => {
-    methodResolveRef.current?.(method);
-    methodResolveRef.current = null;
-    setMethodPopup(s => ({ ...s, isOpen: false }));
-  };
-
-  const handleMethodAutoSelect = () => {
-    methodResolveRef.current?.(null);
-    methodResolveRef.current = null;
-    setMethodPopup(s => ({ ...s, isOpen: false }));
-  };
-
-  const handleMethodCancel = () => {
-    methodResolveRef.current?.(false);
-    methodResolveRef.current = null;
-    setMethodPopup(s => ({ ...s, isOpen: false }));
   };
 
   const askForMissingInputs = (payload) => {
@@ -303,25 +268,23 @@ export default function App() {
       }
 
       if (interruption?.type === 'method') {
-        const selected = await askForMethod(
-          interruption.payload.methods,
-          interruption.payload.domain,
-          query
-        );
-        if (selected === false) {
+        const methods = interruption.payload?.methods || [];
+        const recommended = methods.find(method => method.recommended && method.feasible !== false)
+          || methods.find(method => method.feasible !== false)
+          || methods[0];
+        if (!recommended?.id) {
           setEntries(prev => prev.map(e =>
             e.id === entryId
-              ? { ...e, error: 'Calculation cancelled while waiting for method selection.', isProcessing: false }
+              ? { ...e, error: 'The engine could not automatically select a valid solution method.', isProcessing: false }
               : e
           ));
           setIsProcessing(false);
           return;
         }
         setIsProcessing(false);
-        const selectedMethodId = typeof selected === 'string' ? selected : selected?.id;
         await handleComputeQuery(query, {
           entryId,
-          supplementalParams: { ...(supplementalParams || {}), method: selectedMethodId || undefined },
+          supplementalParams: { ...(supplementalParams || {}), method: recommended.id },
           attachment,
         });
         return;
@@ -509,7 +472,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* Method selection popup — pauses execution */}
       <AnimatePresence>
         {methodPopup.isOpen && (
           <MethodPopup
