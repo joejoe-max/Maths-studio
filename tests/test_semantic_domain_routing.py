@@ -19,6 +19,7 @@ class SemanticDomainRoutingTests(unittest.TestCase):
                     "relationships": [{"type": "carries_load", "source": "member_1", "target": "member_1"}],
                 },
             },
+            {},
         )
         self.assertEqual(spec.domain, "structural")
         self.assertGreaterEqual(spec.domain_confidence[0].confidence, 0.9)
@@ -37,6 +38,7 @@ class SemanticDomainRoutingTests(unittest.TestCase):
                     "relationships": [{"type": "restrained_by", "source": "column_1", "target": "support_1"}],
                 },
             },
+            {},
         )
         self.assertEqual(spec.domain, "structural")
         self.assertEqual(spec.problem_type, "euler_column_buckling")
@@ -44,6 +46,7 @@ class SemanticDomainRoutingTests(unittest.TestCase):
     def test_domain_hint_without_structured_model_is_not_overtrusted(self):
         spec = build_canonical_problem(
             "Differentiate x squared.",
+            {},
             {"domain": "structural", "confidence": 0.99},
         )
         self.assertEqual(spec.domain, "calculus")
