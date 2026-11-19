@@ -8,7 +8,7 @@ def beam_payload(boundary_conditions=None, parameters=None, quantities=None):
         "domain": "structural",
         "problem_type": "beam_analysis",
         "raw_query": "A beam carries a load.",
-        "parameters": parameters or {"L": 6.0, "P": 10_000.0, "a": 3.0, "E": 200e9, "I": 8e-5},
+        "parameters": parameters if parameters is not None else {"L": 6.0, "P": 10_000.0, "a": 3.0, "E": 200e9, "I": 8e-5},
         "engineering_model": {
             "entities": [{"id": "beam_1", "type": "beam"}],
             "quantities": quantities or [],
