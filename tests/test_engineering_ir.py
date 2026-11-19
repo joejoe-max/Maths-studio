@@ -36,6 +36,33 @@ class EngineeringIRTests(unittest.TestCase):
         self.assertEqual(model["validation"]["status"], "invalid")
         self.assertTrue(model["validation"]["errors"])
 
+    def test_flags_unit_dimension_conflicts(self):
+        model = build_engineering_model(
+            "A beam length is 6 metres.",
+            {
+                "domain": "structural",
+                "engineering_model": {
+                    "quantities": [{
+                        "name": "L", "unit": "m", "dimension": "force"
+                    }]
+                },
+            },
+            {"L": 6},
+            {},
+        )
+        self.assertEqual(model["validation"]["status"], "invalid")
+        self.assertIn("represents", model["validation"]["errors"][0])
+
+    def test_rejects_non_finite_values(self):
+        model = build_engineering_model(
+            "A beam span is not finite.",
+            {"domain": "structural"},
+            {"L": float("inf")},
+            {},
+        )
+        self.assertEqual(model["validation"]["status"], "invalid")
+        self.assertIn("finite", model["validation"]["errors"][0])
+
     def test_flags_relationships_to_missing_entities(self):
         model = build_engineering_model(
             "A beam is connected to a support.",
