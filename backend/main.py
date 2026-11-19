@@ -340,6 +340,35 @@ Return ONLY valid JSON in this shape:
   ]
 }
 
+For engineering-domain sub-problems, ALSO return an "engineering_model" object
+alongside the fields above. This is a solver-independent physical representation,
+not another wording classification. Populate it from the meaning of the complete
+statement, not from phrase matching. Use this shape:
+{
+  "entities": [{"id":"beam_1","type":"beam","attributes":{}}],
+  "quantities": [{
+    "name":"L","value":6.0,"unit":"m","dimension":"length",
+    "role":"known","object":"beam_1","location":null,"direction":null,
+    "source_text":"the beam is six metres long","confidence":0.98
+  }],
+  "relationships": [{"type":"supported_by","source":"beam_1","target":"support_left","attributes":{}}],
+  "boundary_conditions": [],
+  "initial_conditions": [],
+  "requested_outputs": ["support_reactions"],
+  "assumptions": [],
+  "missing_information": [],
+  "ambiguities": []
+}
+Use entity types and relationship types that describe the actual physical system;
+they are open vocabulary, not a closed list. Every extracted quantity should be
+attached to the correct object and location when the statement makes that clear.
+Keep source_text as an exact evidence excerpt. A value without a reliable unit
+must not be assigned a guessed unit. Distinguish explicit facts, derived facts,
+and assumptions. Never turn a common textbook convention into an assumption
+unless the user states it. If information is ambiguous or absent, record it in
+ambiguities or missing_information and do not invent it. Keep quantities in
+parameters too when they map to existing solver parameters.
+
 Use the actual source units and convert to SI in parameters only when certain.
 The example above is illustrative; do not assume those values for other inputs.
 Return an empty sub_problems list only when there is no solvable math or
