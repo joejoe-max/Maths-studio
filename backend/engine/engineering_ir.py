@@ -31,25 +31,55 @@ def build_engineering_model(raw_query: str, sub: dict[str, Any], parameters: dic
     supplied = sub.get("engineering_model")
     supplied = supplied if isinstance(supplied, dict) else {}
     supplied_quantities = supplied.get("quantities") if isinstance(supplied.get("quantities"), list) else []
-    by_name = {str(q.get("name")): q for q in supplied_quantities if isinstance(q, dict) and q.get("name")}
+    parameter_values = dict(parameters or {})
     quantities = []
-    for name, value in (parameters or {}).items():
-        if str(name).startswith("_") or name == "canonical_problem_type" or value is None: continue
-        item = by_name.get(str(name), {})
+    seen_names = set()
+
+    def append_quantity(name: str, value: Any, item: dict[str, Any] | None = None) -> None:
+        item = item or {}
         unit = item.get("unit") or (units or {}).get(name)
         try:
             number = float(value)
             numeric = math.isfinite(number)
         except (TypeError, ValueError):
             number, numeric = None, False
+        solver_value = parameter_values.get(name)
+        try:
+            solver_number = float(solver_value) if solver_value is not None else None
+            if solver_number is not None and not math.isfinite(solver_number):
+                solver_number = solver_value
+        except (TypeError, ValueError):
+            solver_number = solver_value
         quantities.append({
-            "name": str(name), "value": number if numeric else value, "unit": unit,
+            "name": str(name),
+            "value": number if numeric else value,
+            "source_value": item.get("value", value),
+            "solver_value": solver_number,
+            "unit": unit,
             "dimension": item.get("dimension") or _dimension(unit),
             "role": item.get("role") or ("known" if numeric else "symbolic_or_unresolved"),
-            "object": item.get("object"), "location": item.get("location"),
-            "direction": item.get("direction"), "source_text": item.get("source_text") or raw_query,
+            "object": item.get("object"),
+            "location": item.get("location"),
+            "direction": item.get("direction"),
+            "source_text": item.get("source_text") or raw_query,
             "confidence": item.get("confidence"),
         })
+        seen_names.add(str(name))
+
+    # Keep every semantic quantity, including facts that do not yet map to a
+    # legacy solver parameter. Solver values are stored separately so unit
+    # normalization in older code cannot erase the original evidence.
+    for item in supplied_quantities:
+        if not isinstance(item, dict) or not item.get("name"):
+            continue
+        name = str(item["name"])
+        append_quantity(name, item.get("value", parameter_values.get(name)), item)
+
+    for name, value in parameter_values.items():
+        if str(name).startswith("_") or name == "canonical_problem_type" or value is None or str(name) in seen_names:
+            continue
+        append_quantity(str(name), value)
+
     model = {
         "schema_version":"1.0", "domain":str(sub.get("domain") or "unknown").lower(),
         "problem_type":str(sub.get("problem_type") or "general"), "source_text":raw_query,
