@@ -94,5 +94,16 @@ class ApiSmokeTests(unittest.TestCase):
         parsed = _parse_gemini_json("This is not JSON", fallback_domain="unknown")
         self.assertTrue(parsed.get("_parse_fallback"))
 
+    def test_solve_endpoint_streams_a_deterministic_math_result(self):
+        response = self.client.post(
+            "/api/compute/solve",
+            headers={"accept": "text/event-stream"},
+            json={"input": "Solve 2x + 4 = 10"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/event-stream", response.headers.get("content-type", ""))
+        self.assertIn('"type": "final"', response.text)
+        self.assertIn("x = 3", response.text.replace("\\", ""))
+
 if __name__ == "__main__":
     unittest.main()
