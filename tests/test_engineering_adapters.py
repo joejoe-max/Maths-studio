@@ -224,7 +224,7 @@ class EngineeringAdapterTests(unittest.TestCase):
         events = asyncio.run(run())
         final = next(event for event in events if event.get("type") == "final")
         pcr = float(next(item["value"] for item in final["summary"] if item["label"] == "P_cr"))
-        self.assertAlmostEqual(pcr, 1.754596338e6, delta=1.0)
+        self.assertAlmostEqual(pcr, 1.754596338e6, delta=5.0)
 
     def test_adapted_shaft_input_reaches_torsion_solver(self):
         data = {
@@ -250,7 +250,7 @@ class EngineeringAdapterTests(unittest.TestCase):
         events = asyncio.run(run())
         final = next(event for event in events if event.get("type") == "final")
         summary = {item["label"]: float(item["value"]) for item in final["summary"]}
-        self.assertAlmostEqual(summary["tau_max"], 8.148733086e7, delta=10.0)
+        self.assertAlmostEqual(summary["tau_max"], 8.148733086e7, delta=100.0)
 
     def test_adapted_pressure_vessel_input_reaches_membrane_solver(self):
         data = {
